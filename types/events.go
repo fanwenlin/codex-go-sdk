@@ -1,5 +1,10 @@
 package types
 
+import (
+	"encoding/json"
+	"errors"
+)
+
 // ThreadEvent is the union type for all thread events.
 // In Go, we implement this using an interface that all event types implement.
 type ThreadEvent interface {
@@ -80,6 +85,17 @@ type ItemStartedEvent struct {
 	Item ThreadItem `json:"item"`
 }
 
+// UnmarshalJSON parses the item payload into a concrete ThreadItem.
+func (e *ItemStartedEvent) UnmarshalJSON(data []byte) error {
+	eventType, item, err := unmarshalItemEvent(data)
+	if err != nil {
+		return err
+	}
+	e.Type = eventType
+	e.Item = item
+	return nil
+}
+
 // GetType returns the event type discriminator
 func (e ItemStartedEvent) GetType() string {
 	return e.Type
@@ -93,6 +109,17 @@ type ItemUpdatedEvent struct {
 	Item ThreadItem `json:"item"`
 }
 
+// UnmarshalJSON parses the item payload into a concrete ThreadItem.
+func (e *ItemUpdatedEvent) UnmarshalJSON(data []byte) error {
+	eventType, item, err := unmarshalItemEvent(data)
+	if err != nil {
+		return err
+	}
+	e.Type = eventType
+	e.Item = item
+	return nil
+}
+
 // GetType returns the event type discriminator
 func (e ItemUpdatedEvent) GetType() string {
 	return e.Type
@@ -104,6 +131,17 @@ type ItemCompletedEvent struct {
 	Type string `json:"type"`
 	// Item is the completed thread item
 	Item ThreadItem `json:"item"`
+}
+
+// UnmarshalJSON parses the item payload into a concrete ThreadItem.
+func (e *ItemCompletedEvent) UnmarshalJSON(data []byte) error {
+	eventType, item, err := unmarshalItemEvent(data)
+	if err != nil {
+		return err
+	}
+	e.Type = eventType
+	e.Item = item
+	return nil
 }
 
 // GetType returns the event type discriminator
@@ -122,4 +160,24 @@ type ThreadErrorEvent struct {
 // GetType returns the event type discriminator
 func (e ThreadErrorEvent) GetType() string {
 	return e.Type
+}
+
+type itemEventEnvelope struct {
+	Type string          `json:"type"`
+	Item json.RawMessage `json:"item"`
+}
+
+func unmarshalItemEvent(data []byte) (string, ThreadItem, error) {
+	var envelope itemEventEnvelope
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		return "", nil, err
+	}
+	if len(envelope.Item) == 0 {
+		return envelope.Type, nil, errors.New("missing item payload")
+	}
+	item, err := unmarshalThreadItem(envelope.Item)
+	if err != nil {
+		return envelope.Type, nil, err
+	}
+	return envelope.Type, item, nil
 }

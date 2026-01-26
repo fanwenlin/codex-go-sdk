@@ -25,6 +25,11 @@ func NewCodex(options types.CodexOptions) *Codex {
 		// Try to find codex in PATH or parent project
 		exec = NewCodexExec("", options.Env)
 	}
+	if options.Verbose {
+		if codexExec, ok := exec.(*CodexExec); ok {
+			codexExec.EnableVerbose(options.VerboseWriter)
+		}
+	}
 	return &Codex{
 		exec:    exec,
 		options: options,
@@ -34,6 +39,11 @@ func NewCodex(options types.CodexOptions) *Codex {
 // NewCodexWithExec creates a new Codex client with a custom Exec implementation.
 // This is intended for testing purposes.
 func NewCodexWithExec(exec Exec, options types.CodexOptions) *Codex {
+	if options.Verbose {
+		if codexExec, ok := exec.(*CodexExec); ok {
+			codexExec.EnableVerbose(options.VerboseWriter)
+		}
+	}
 	return &Codex{
 		exec:    exec,
 		options: options,

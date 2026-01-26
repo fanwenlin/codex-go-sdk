@@ -181,6 +181,45 @@ func TestRunStreamedEvents(t *testing.T) {
 	}
 }
 
+func TestItemCompletedParsing(t *testing.T) {
+	mockExec := NewMockExec()
+	mockExec.SetEvents([]string{
+		`{"type":"thread.started","thread_id":"test"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"Hello"}}`,
+		`{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}`,
+	})
+
+	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
+	thread := client.StartThread(types.ThreadOptions{})
+
+	turn, err := thread.Run("test", types.TurnOptions{})
+	if err != nil {
+		t.Fatalf("Run failed: %v", err)
+	}
+
+	if turn.FinalResponse != "Hello" {
+		t.Errorf("Final response mismatch: %s", turn.FinalResponse)
+	}
+
+	if len(turn.Items) != 1 {
+		t.Fatalf("Expected 1 item, got %d", len(turn.Items))
+	}
+
+	switch item := turn.Items[0].(type) {
+	case *types.AgentMessageItem:
+		if item.Text != "Hello" {
+			t.Errorf("Agent message text mismatch: %s", item.Text)
+		}
+	case types.AgentMessageItem:
+		if item.Text != "Hello" {
+			t.Errorf("Agent message text mismatch: %s", item.Text)
+		}
+	default:
+		t.Fatalf("Unexpected item type: %T", turn.Items[0])
+	}
+}
+
 func TestEnvPassedToExec(t *testing.T) {
 	mockExec := NewMockExec()
 	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})

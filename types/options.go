@@ -1,5 +1,7 @@
 package types
 
+import "io"
+
 // ApprovalMode represents the approval mode for actions.
 type ApprovalMode string
 
@@ -50,6 +52,10 @@ type CodexOptions struct {
 	// Env is environment variables passed to the Codex CLI process.
 	// When provided, the SDK will not inherit variables from the environment.
 	Env map[string]string
+	// Verbose enables debug logging for Codex CLI execution.
+	Verbose bool
+	// VerboseWriter is the output for debug logs when Verbose is enabled.
+	VerboseWriter io.Writer
 }
 
 // ThreadOptions represents options for a thread.
@@ -62,6 +68,8 @@ type ThreadOptions struct {
 	WorkingDirectory string
 	// SkipGitRepoCheck skips the git repository check
 	SkipGitRepoCheck bool
+	// DisableSkills disables the Codex CLI skills feature.
+	DisableSkills bool
 	// ModelReasoningEffort is the reasoning effort for the model
 	ModelReasoningEffort ModelReasoningEffort
 	// NetworkAccessEnabled enables network access

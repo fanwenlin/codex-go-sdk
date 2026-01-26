@@ -154,11 +154,10 @@ func FindAllFlags(args []string, flag string) []string {
 
 // BuildMockEvents builds a mock event stream for testing
 func BuildMockEvents(responseID, messageID, responseText string) []string {
-	// For simplicity, we return simplified events that don't use the complex item type
-	// The full item.completed parsing is complex due to ThreadItem being an interface
 	return []string{
 		fmt.Sprintf(`{"type":"thread.started","thread_id":"thread_%s"}`, responseID),
 		`{"type":"turn.started"}`,
+		fmt.Sprintf(`{"type":"item.completed","item":{"id":"msg_%s","type":"agent_message","text":%q}}`, messageID, responseText),
 		fmt.Sprintf(`{"type":"turn.completed","usage":{"input_tokens":42,"cached_input_tokens":12,"output_tokens":5}}`),
 	}
 }
