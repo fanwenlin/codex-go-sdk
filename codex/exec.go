@@ -17,7 +17,7 @@ import (
 const (
 	envInternalOriginatorOverrideKey = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"
 	envBaseURLKey                    = "OPENAI_BASE_URL"
-	envAPIKey                        = "CODEX_API_KEY"
+	envCodexAPIEnvVar                = "CODEX_API_KEY"
 )
 
 // CodexExecArgs represents the arguments for executing a codex command.
@@ -241,7 +241,7 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 			env = append(env, fmt.Sprintf("%s=%s", envBaseURLKey, args.BaseUrl))
 		}
 		if args.ApiKey != "" {
-			env = append(env, fmt.Sprintf("%s=%s", envAPIKey, args.ApiKey))
+			env = append(env, fmt.Sprintf("%s=%s", envCodexAPIEnvVar, args.ApiKey))
 		}
 
 		// Create command
