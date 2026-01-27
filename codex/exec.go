@@ -14,6 +14,12 @@ import (
 	"sync"
 )
 
+const (
+	envInternalOriginatorOverrideKey = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE"
+	envBaseURLKey                    = "OPENAI_BASE_URL"
+	envAPIKey                        = "CODEX_API_KEY"
+)
+
 // CodexExecArgs represents the arguments for executing a codex command.
 type CodexExecArgs struct {
 	Input string
@@ -221,21 +227,21 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 		// Check for internal originator override
 		foundOriginator := false
 		for _, e := range env {
-			if strings.HasPrefix(e, "CODEX_INTERNAL_ORIGINATOR_OVERRIDE=") {
+			if strings.HasPrefix(e, envInternalOriginatorOverrideKey+"=") {
 				foundOriginator = true
 				break
 			}
 		}
 		if !foundOriginator {
-			env = append(env, "CODEX_INTERNAL_ORIGINATOR_OVERRIDE=codex_sdk_go")
+			env = append(env, envInternalOriginatorOverrideKey+"=codex_sdk_go")
 		}
 
 		// Set API key and base URL
 		if args.BaseUrl != "" {
-			env = append(env, fmt.Sprintf("OPENAI_BASE_URL=%s", args.BaseUrl))
+			env = append(env, fmt.Sprintf("%s=%s", envBaseURLKey, args.BaseUrl))
 		}
 		if args.ApiKey != "" {
-			env = append(env, fmt.Sprintf("CODEX_API_KEY=%s", args.ApiKey))
+			env = append(env, fmt.Sprintf("%s=%s", envAPIKey, args.ApiKey))
 		}
 
 		// Create command
