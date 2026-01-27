@@ -102,8 +102,7 @@ linters:
 
 linters-settings:
   goimports:
-    local-prefixes:
-      - github.com/fanwenlin/codex-go-sdk
+    local-prefixes: github.com/fanwenlin/codex-go-sdk
   golines:
     max-len: 120
 
