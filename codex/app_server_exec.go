@@ -67,8 +67,6 @@ type AppServerExec struct {
 
 	knownThreadsMu sync.Mutex
 	knownThreads   map[string]struct{}
-
-	verboseLogMu sync.Mutex
 }
 
 // NewAppServerExec creates a new AppServerExec instance.
@@ -393,7 +391,6 @@ func (a *AppServerExec) runTurn(args CodexExecArgs, output chan ExecResult) erro
 		}
 		line, marshalErr := json.Marshal(threadStarted)
 		if marshalErr == nil {
-			a.appendVerboseJSONL(string(line))
 			output <- ExecResult{Line: string(line)}
 		}
 	}
@@ -567,25 +564,9 @@ func (a *AppServerExec) handleTurnEvent(
 		return false, err
 	}
 	if line != "" {
-		a.appendVerboseJSONL(line)
 		output <- ExecResult{Line: line}
 	}
 	return done, nil
-}
-
-func (a *AppServerExec) appendVerboseJSONL(line string) {
-	if line == "" {
-		return
-	}
-	// TODO: remove verbose.log capture before merging.
-	a.verboseLogMu.Lock()
-	defer a.verboseLogMu.Unlock()
-	file, err := os.OpenFile("verbose.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return
-	}
-	defer file.Close()
-	_, _ = file.WriteString(line + "\n")
 }
 
 func appEventToLegacyLine(event appEvent, state *turnState) (string, bool, error) {
