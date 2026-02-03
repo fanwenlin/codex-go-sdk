@@ -163,22 +163,22 @@ func FindAllFlags(args []string, flag string) []string {
 // BuildMockEvents builds a mock event stream for testing
 func BuildMockEvents(responseID, messageID, responseText string) []string {
 	itemCompleted := fmt.Sprintf(
-		`{"type":"item.completed","item":{"id":"msg_%s","type":"agent_message","text":%q}}`,
+		`{"type":"item.completed","item":{"id":"msg_%s","type":"agentMessage","text":%q}}`,
 		messageID,
 		responseText,
 	)
 	return []string{
-		fmt.Sprintf(`{"type":"thread.started","thread_id":"thread_%s"}`, responseID),
+		fmt.Sprintf(`{"type":"thread.started","threadId":"thread_%s"}`, responseID),
 		`{"type":"turn.started"}`,
 		itemCompleted,
-		`{"type":"turn.completed","usage":{"input_tokens":42,"cached_input_tokens":12,"output_tokens":5}}`,
+		`{"type":"turn.completed","usage":{"inputTokens":42,"cachedInputTokens":12,"outputTokens":5}}`,
 	}
 }
 
 // BuildMockEventsWithFailure builds a mock event stream that fails
 func BuildMockEventsWithFailure(errorMessage string) []string {
 	return []string{
-		`{"type":"thread.started","thread_id":"thread_fail"}`,
+		`{"type":"thread.started","threadId":"thread_fail"}`,
 		`{"type":"turn.started"}`,
 		fmt.Sprintf(`{"type":"turn.failed","error":{"message":"%s"}}`, errorMessage),
 	}

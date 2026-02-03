@@ -17,18 +17,7 @@ type ThreadStartedEvent struct {
 	// Type is the event type discriminator
 	Type string `json:"type"`
 	// ThreadId is the identifier of the new thread
-	ThreadId string `json:"thread_id"`
-}
-
-// UnmarshalJSON supports both snake_case and camelCase field names.
-func (e *ThreadStartedEvent) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	e.Type = decodeString(raw, "type")
-	e.ThreadId = decodeString(raw, "thread_id", "threadId")
-	return nil
+	ThreadId string `json:"threadId"`
 }
 
 // GetType returns the event type discriminator
@@ -50,29 +39,11 @@ func (e TurnStartedEvent) GetType() string {
 // Usage describes the usage of tokens during a turn.
 type Usage struct {
 	// InputTokens is the number of input tokens used during the turn
-	InputTokens int `json:"input_tokens"`
+	InputTokens int `json:"inputTokens"`
 	// CachedInputTokens is the number of cached input tokens used during the turn
-	CachedInputTokens int `json:"cached_input_tokens"`
+	CachedInputTokens int `json:"cachedInputTokens"`
 	// OutputTokens is the number of output tokens used during the turn
-	OutputTokens int `json:"output_tokens"`
-}
-
-// UnmarshalJSON supports both snake_case and camelCase field names.
-func (u *Usage) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	if value := decodeIntPtr(raw, "input_tokens", "inputTokens"); value != nil {
-		u.InputTokens = *value
-	}
-	if value := decodeIntPtr(raw, "cached_input_tokens", "cachedInputTokens"); value != nil {
-		u.CachedInputTokens = *value
-	}
-	if value := decodeIntPtr(raw, "output_tokens", "outputTokens"); value != nil {
-		u.OutputTokens = *value
-	}
-	return nil
+	OutputTokens int `json:"outputTokens"`
 }
 
 // TurnCompletedEvent is emitted when a turn is completed.

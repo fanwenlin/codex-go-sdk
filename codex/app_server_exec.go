@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,6 +67,8 @@ type AppServerExec struct {
 
 	knownThreadsMu sync.Mutex
 	knownThreads   map[string]struct{}
+
+	verboseLogMu sync.Mutex
 }
 
 // NewAppServerExec creates a new AppServerExec instance.
@@ -85,10 +88,9 @@ func NewAppServerExec(
 	}
 	if clientInfo.Name == "" {
 		clientInfo.Name = "codex-go-sdk"
+		clientInfo.Version = codexSDKVersion
 	}
-	if clientInfo.Version == "" {
-		clientInfo.Version = "dev"
-	}
+
 	return &AppServerExec{
 		executablePath: executablePath,
 		args:           args,
@@ -386,11 +388,12 @@ func (a *AppServerExec) runTurn(args CodexExecArgs, output chan ExecResult) erro
 
 	if isNewThread {
 		threadStarted := map[string]interface{}{
-			"type":      "thread.started",
-			"thread_id": threadID,
+			"type":     "thread.started",
+			"threadId": threadID,
 		}
 		line, marshalErr := json.Marshal(threadStarted)
 		if marshalErr == nil {
+			a.appendVerboseJSONL(string(line))
 			output <- ExecResult{Line: string(line)}
 		}
 	}
@@ -494,6 +497,9 @@ func isApprovalRequestedEvent(method string) bool {
 	return method == "item/commandExecution/approvalRequested" || method == "item/fileChange/approvalRequested"
 }
 
+//go:embed current_version
+var codexSDKVersion string
+
 const (
 	appServerSubscriberBuffer = 256
 	defaultInitTimeout        = 10 * time.Second
@@ -561,9 +567,25 @@ func (a *AppServerExec) handleTurnEvent(
 		return false, err
 	}
 	if line != "" {
+		a.appendVerboseJSONL(line)
 		output <- ExecResult{Line: line}
 	}
 	return done, nil
+}
+
+func (a *AppServerExec) appendVerboseJSONL(line string) {
+	if line == "" {
+		return
+	}
+	// TODO: remove verbose.log capture before merging.
+	a.verboseLogMu.Lock()
+	defer a.verboseLogMu.Unlock()
+	file, err := os.OpenFile("verbose.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+	_, _ = file.WriteString(line + "\n")
 }
 
 func appEventToLegacyLine(event appEvent, state *turnState) (string, bool, error) {

@@ -47,21 +47,21 @@ func unmarshalThreadItem(data []byte) (ThreadItem, error) {
 
 func newThreadItem(itemType string) (ThreadItem, bool) {
 	switch itemType {
-	case "agent_message", "agentMessage":
+	case "agentMessage":
 		return &AgentMessageItem{}, true
 	case "reasoning":
 		return &ReasoningItem{}, true
 	case "userMessage":
 		return &UserMessageItem{}, true
-	case "command_execution", "commandExecution":
+	case "commandExecution":
 		return &CommandExecutionItem{}, true
-	case "file_change", "fileChange":
+	case "fileChange":
 		return &FileChangeItem{}, true
-	case "mcp_tool_call", "mcpToolCall":
+	case "mcpToolCall":
 		return &McpToolCallItem{}, true
-	case "web_search", "webSearch":
+	case "webSearch":
 		return &WebSearchItem{}, true
-	case "todo_list", "todoList":
+	case "todoList":
 		return &TodoListItem{}, true
 	case "error":
 		return &ErrorItem{}, true

@@ -1,14 +1,13 @@
 package types
 
-import "encoding/json"
-
 // CommandExecutionStatus represents the status of a command execution.
 type CommandExecutionStatus string
 
 const (
-	CommandExecutionStatusInProgress CommandExecutionStatus = "in_progress"
+	CommandExecutionStatusInProgress CommandExecutionStatus = "inProgress"
 	CommandExecutionStatusCompleted  CommandExecutionStatus = "completed"
 	CommandExecutionStatusFailed     CommandExecutionStatus = "failed"
+	CommandExecutionStatusDeclined   CommandExecutionStatus = "declined"
 )
 
 // CommandExecutionItem represents a command executed by the agent.
@@ -18,29 +17,11 @@ type CommandExecutionItem struct {
 	// Command is the command line executed by the agent
 	Command string `json:"command"`
 	// AggregatedOutput is stdout and stderr captured while the command was running
-	AggregatedOutput string `json:"aggregated_output"`
+	AggregatedOutput *string `json:"aggregatedOutput,omitempty"`
 	// ExitCode is set when the command exits; omitted while still running
-	ExitCode *int `json:"exit_code,omitempty"`
+	ExitCode *int `json:"exitCode,omitempty"`
 	// Status is the current status of the command execution
 	Status CommandExecutionStatus `json:"status"`
-}
-
-// UnmarshalJSON supports both snake_case and camelCase field names.
-func (i *CommandExecutionItem) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	i.ID = decodeString(raw, "id")
-	i.Type = decodeString(raw, "type")
-	i.Command = decodeString(raw, "command")
-	i.AggregatedOutput = decodeString(raw, "aggregated_output", "aggregatedOutput", "output")
-	i.ExitCode = decodeIntPtr(raw, "exit_code", "exitCode")
-	status := decodeString(raw, "status")
-	if status != "" {
-		i.Status = CommandExecutionStatus(status)
-	}
-	return nil
 }
 
 // GetType returns the item type discriminator.
@@ -48,14 +29,20 @@ func (i CommandExecutionItem) GetType() string {
 	return i.Type
 }
 
-// PatchChangeKind indicates the type of the file change.
-type PatchChangeKind string
+// PatchChangeKindType indicates the type of the file change.
+type PatchChangeKindType string
 
 const (
-	PatchChangeKindAdd    PatchChangeKind = "add"
-	PatchChangeKindDelete PatchChangeKind = "delete"
-	PatchChangeKindUpdate PatchChangeKind = "update"
+	PatchChangeKindAdd    PatchChangeKindType = "add"
+	PatchChangeKindDelete PatchChangeKindType = "delete"
+	PatchChangeKindUpdate PatchChangeKindType = "update"
 )
+
+// PatchChangeKind describes the change, including update move_path when present.
+type PatchChangeKind struct {
+	Type     PatchChangeKindType `json:"type"`
+	MovePath *string             `json:"move_path,omitempty"`
+}
 
 // FileUpdateChange represents a set of file changes by the agent.
 type FileUpdateChange struct {
@@ -67,8 +54,10 @@ type FileUpdateChange struct {
 type PatchApplyStatus string
 
 const (
-	PatchApplyStatusCompleted PatchApplyStatus = "completed"
-	PatchApplyStatusFailed    PatchApplyStatus = "failed"
+	PatchApplyStatusInProgress PatchApplyStatus = "inProgress"
+	PatchApplyStatusCompleted  PatchApplyStatus = "completed"
+	PatchApplyStatusFailed     PatchApplyStatus = "failed"
+	PatchApplyStatusDeclined   PatchApplyStatus = "declined"
 )
 
 // FileChangeItem represents a set of file changes by the agent.
@@ -92,7 +81,7 @@ func (i FileChangeItem) GetType() string {
 type McpToolCallStatus string
 
 const (
-	McpToolCallStatusInProgress McpToolCallStatus = "in_progress"
+	McpToolCallStatusInProgress McpToolCallStatus = "inProgress"
 	McpToolCallStatusCompleted  McpToolCallStatus = "completed"
 	McpToolCallStatusFailed     McpToolCallStatus = "failed"
 )
@@ -118,18 +107,7 @@ type McpToolCallItem struct {
 // McpToolCallResult contains the result payload for successful MCP tool calls.
 type McpToolCallResult struct {
 	Content           interface{} `json:"content"`
-	StructuredContent interface{} `json:"structured_content"`
-}
-
-// UnmarshalJSON supports both snake_case and camelCase field names.
-func (r *McpToolCallResult) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	r.Content = decodeAny(raw, "content")
-	r.StructuredContent = decodeAny(raw, "structured_content", "structuredContent")
-	return nil
+	StructuredContent interface{} `json:"structuredContent"`
 }
 
 // McpToolCallError contains error information for failed MCP tool calls.
@@ -150,18 +128,6 @@ type AgentMessageItem struct {
 	Text string `json:"text"`
 }
 
-// UnmarshalJSON supports alternate field names.
-func (i *AgentMessageItem) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	i.ID = decodeString(raw, "id")
-	i.Type = decodeString(raw, "type")
-	i.Text = decodeString(raw, "text")
-	return nil
-}
-
 // GetType returns the item type discriminator.
 func (i AgentMessageItem) GetType() string {
 	return i.Type
@@ -169,21 +135,9 @@ func (i AgentMessageItem) GetType() string {
 
 // ReasoningItem represents the agent's reasoning summary.
 type ReasoningItem struct {
-	ID   string `json:"id"`
-	Type string `json:"type"`
-	Text string `json:"text"`
-}
-
-// UnmarshalJSON supports alternate field names.
-func (i *ReasoningItem) UnmarshalJSON(data []byte) error {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	i.ID = decodeString(raw, "id")
-	i.Type = decodeString(raw, "type")
-	i.Text = decodeString(raw, "text", "summaryText", "summary")
-	return nil
+	ID      string   `json:"id"`
+	Type    string   `json:"type"`
+	Summary []string `json:"summary"`
 }
 
 // GetType returns the item type discriminator.

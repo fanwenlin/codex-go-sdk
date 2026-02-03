@@ -101,7 +101,7 @@ type eventSummaryMeta struct {
 		// Common item fields used for debugging output.
 		Status   string `json:"status"`
 		Command  string `json:"command"`
-		ExitCode *int   `json:"exit_code"`
+		ExitCode *int   `json:"exitCode"`
 		Server   string `json:"server"`
 		Tool     string `json:"tool"`
 	} `json:"item"`
@@ -135,7 +135,7 @@ func appendItemSummary(summary string, item *struct {
 	// Common item fields used for debugging output.
 	Status   string `json:"status"`
 	Command  string `json:"command"`
-	ExitCode *int   `json:"exit_code"`
+	ExitCode *int   `json:"exitCode"`
 	Server   string `json:"server"`
 	Tool     string `json:"tool"`
 }) string {
@@ -144,7 +144,7 @@ func appendItemSummary(summary string, item *struct {
 	}
 	summary = fmt.Sprintf("%s item=%s", summary, item.Type)
 	switch item.Type {
-	case "command_execution":
+	case "commandExecution":
 		if item.Status != "" {
 			summary = fmt.Sprintf("%s status=%s", summary, item.Status)
 		}
@@ -154,7 +154,7 @@ func appendItemSummary(summary string, item *struct {
 		if item.Command != "" {
 			summary = fmt.Sprintf("%s cmd=%q", summary, item.Command)
 		}
-	case "mcp_tool_call":
+	case "mcpToolCall":
 		if item.Server != "" || item.Tool != "" {
 			summary = fmt.Sprintf("%s mcp=%s/%s", summary, item.Server, item.Tool)
 		}

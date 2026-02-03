@@ -77,6 +77,7 @@ const (
 	CommandExecutionStatusInProgress = types.CommandExecutionStatusInProgress
 	CommandExecutionStatusCompleted  = types.CommandExecutionStatusCompleted
 	CommandExecutionStatusFailed     = types.CommandExecutionStatusFailed
+	CommandExecutionStatusDeclined   = types.CommandExecutionStatusDeclined
 )
 
 // Re-export event types.

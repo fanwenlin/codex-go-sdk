@@ -11,7 +11,7 @@ import (
 // TestCodexExecArgsGeneration tests that command arguments are properly generated
 func TestCodexExecArgsGeneration(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
 	thread := client.StartThread(types.ThreadOptions{
@@ -38,7 +38,7 @@ func TestCodexExecArgsGeneration(t *testing.T) {
 
 func TestWebSearchTrue(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
 	thread := client.StartThread(types.ThreadOptions{
@@ -66,7 +66,7 @@ func TestWebSearchTrue(t *testing.T) {
 
 func TestImagesForwarding(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
 	thread := client.StartThread(types.ThreadOptions{})
@@ -92,7 +92,7 @@ func TestImagesForwarding(t *testing.T) {
 
 func TestAdditionalDirectories(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
 	thread := client.StartThread(types.ThreadOptions{
@@ -114,7 +114,7 @@ func TestAdditionalDirectories(t *testing.T) {
 
 func TestOutputSchemaForwarding(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	schema := map[string]interface{}{
 		"type": "object",
@@ -141,7 +141,7 @@ func TestOutputSchemaForwarding(t *testing.T) {
 
 func TestThreadIDSettingFromEvent(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test-thread-123"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test-thread-123"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
 	thread := client.StartThread(types.ThreadOptions{})
@@ -158,9 +158,9 @@ func TestThreadIDSettingFromEvent(t *testing.T) {
 func TestRunStreamedEvents(t *testing.T) {
 	mockExec := NewMockExec()
 	mockExec.SetEvents([]string{
-		`{"type":"thread.started","thread_id":"test"}`,
+		`{"type":"thread.started","threadId":"test"}`,
 		`{"type":"turn.started"}`,
-		`{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":5}}`,
+		`{"type":"turn.completed","usage":{"inputTokens":10,"cachedInputTokens":2,"outputTokens":5}}`,
 	})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
@@ -184,10 +184,10 @@ func TestRunStreamedEvents(t *testing.T) {
 func TestItemCompletedParsing(t *testing.T) {
 	mockExec := NewMockExec()
 	mockExec.SetEvents([]string{
-		`{"type":"thread.started","thread_id":"test"}`,
+		`{"type":"thread.started","threadId":"test"}`,
 		`{"type":"turn.started"}`,
-		`{"type":"item.completed","item":{"id":"msg-1","type":"agent_message","text":"Hello"}}`,
-		`{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}`,
+		`{"type":"item.completed","item":{"id":"msg-1","type":"agentMessage","text":"Hello"}}`,
+		`{"type":"turn.completed","usage":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1}}`,
 	})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
@@ -222,7 +222,7 @@ func TestItemCompletedParsing(t *testing.T) {
 
 func TestEnvPassedToExec(t *testing.T) {
 	mockExec := NewMockExec()
-	mockExec.SetEvents([]string{`{"type":"thread.started","thread_id":"test"}`})
+	mockExec.SetEvents([]string{`{"type":"thread.started","threadId":"test"}`})
 
 	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{
 		ApiKey:  "test-key-123",
