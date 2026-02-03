@@ -52,6 +52,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 
 	// Normalize input
 	prompt, images := t.normalizeInput(input)
+	inputItems := t.normalizeInputItems(input)
 
 	// Build context
 	ctx := context.Background()
@@ -72,6 +73,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 
 	args := CodexExecArgs{
 		Input:                 prompt,
+		InputItems:            inputItems,
 		BaseUrl:               t.options.BaseUrl,
 		ApiKey:                t.options.ApiKey,
 		ThreadId:              threadId,
@@ -88,6 +90,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 		WebSearchMode:         string(options.WebSearchMode),
 		WebSearchEnabled:      options.WebSearchEnabled,
 		ApprovalPolicy:        string(options.ApprovalPolicy),
+		ApprovalHandler:       options.ApprovalHandler,
 		AdditionalDirectories: options.AdditionalDirectories,
 	}
 
@@ -136,7 +139,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 
 			var event types.ThreadEvent
 			switch eventType {
-			case "thread.started":
+			case "thread.started", "thread/started":
 				threadStarted := &types.ThreadStartedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), threadStarted); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -148,7 +151,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 				event = threadStarted
 				// Set thread ID
 				t.id = &threadStarted.ThreadId
-			case "turn.started":
+			case "turn.started", "turn/started":
 				turnStarted := &types.TurnStartedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), turnStarted); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -158,7 +161,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 					return
 				}
 				event = turnStarted
-			case "turn.completed":
+			case "turn.completed", "turn/completed":
 				turnCompleted := &types.TurnCompletedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), turnCompleted); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -168,7 +171,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 					return
 				}
 				event = turnCompleted
-			case "turn.failed":
+			case "turn.failed", "turn/failed":
 				turnFailed := &types.TurnFailedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), turnFailed); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -178,7 +181,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 					return
 				}
 				event = turnFailed
-			case "item.started":
+			case "item.started", "item/started":
 				itemStarted := &types.ItemStartedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), itemStarted); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -188,7 +191,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 					return
 				}
 				event = itemStarted
-			case "item.updated":
+			case "item.updated", "item/updated":
 				itemUpdated := &types.ItemUpdatedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), itemUpdated); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -198,7 +201,7 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 					return
 				}
 				event = itemUpdated
-			case "item.completed":
+			case "item.completed", "item/completed":
 				itemCompleted := &types.ItemCompletedEvent{}
 				if err := json.Unmarshal([]byte(result.Line), itemCompleted); err != nil {
 					events <- &types.ThreadErrorEvent{
@@ -219,11 +222,11 @@ func (t *Thread) runStreamedInternal(input types.Input, turnOptions types.TurnOp
 				}
 				event = errorEvent
 			default:
-				events <- &types.ThreadErrorEvent{
-					Type:    "error",
-					Message: fmt.Sprintf("unknown event type: %s", eventType),
+				rawEvent := &types.RawEvent{
+					Type: eventType,
+					Raw:  json.RawMessage(result.Line),
 				}
-				return
+				event = rawEvent
 			}
 
 			// Send event to channel
@@ -306,4 +309,15 @@ func (t *Thread) normalizeInput(input types.Input) (prompt string, images []stri
 	}
 
 	return strings.Join(promptParts, "\n\n"), imagePaths
+}
+
+// normalizeInputItems preserves structured input items when available.
+func (t *Thread) normalizeInputItems(input types.Input) []types.UserInput {
+	if s, ok := input.(string); ok {
+		return []types.UserInput{types.NewTextInput(s)}
+	}
+	if inputs, ok := input.([]types.UserInput); ok {
+		return inputs
+	}
+	return nil
 }

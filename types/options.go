@@ -41,8 +41,48 @@ const (
 	WebSearchModeLive     WebSearchMode = "live"
 )
 
+// ApprovalDecision represents the decision for an approval request.
+type ApprovalDecision string
+
+const (
+	ApprovalDecisionApproved ApprovalDecision = "approved"
+	ApprovalDecisionRejected ApprovalDecision = "rejected"
+)
+
+// ApprovalRequest represents an approval request from the app server.
+type ApprovalRequest struct {
+	ItemID   string
+	ItemType string
+}
+
+// ApprovalHandler decides how to respond to an approval request.
+type ApprovalHandler func(request ApprovalRequest) (ApprovalDecision, error)
+
+// TransportMode represents the backend transport used by the SDK.
+type TransportMode string
+
+const (
+	TransportAppServer TransportMode = "app-server"
+	TransportCLI       TransportMode = "cli"
+)
+
+// ClientInfo identifies the SDK client to the app server.
+type ClientInfo struct {
+	Name    string
+	Version string
+}
+
 // CodexOptions represents options for the Codex client.
 type CodexOptions struct {
+	// Transport selects the backend transport. Defaults to app-server.
+	Transport TransportMode
+	// AppServerPathOverride is an optional path to the app server executable.
+	// When unset, the SDK will try to locate the codex binary and run it with "app-server".
+	AppServerPathOverride string
+	// AppServerArgs are optional arguments passed to the app server executable.
+	AppServerArgs []string
+	// ClientInfo identifies the SDK client to the app server (initialize).
+	ClientInfo ClientInfo
 	// CodexPathOverride is an optional path to the codex binary
 	CodexPathOverride string
 	// BaseUrl is the base URL for the API
@@ -80,6 +120,8 @@ type ThreadOptions struct {
 	WebSearchEnabled *bool
 	// ApprovalPolicy is the approval mode
 	ApprovalPolicy ApprovalMode
+	// ApprovalHandler handles approval requests when the app server asks for permission.
+	ApprovalHandler ApprovalHandler
 	// AdditionalDirectories are additional directories to include
 	AdditionalDirectories []string
 }

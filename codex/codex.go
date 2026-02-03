@@ -19,15 +19,29 @@ type Codex struct {
 // NewCodex creates a new Codex client.
 func NewCodex(options types.CodexOptions) *Codex {
 	var exec Exec
-	if options.CodexPathOverride != "" {
-		exec = NewCodexExec(options.CodexPathOverride, options.Env)
+	if options.Transport == "" || options.Transport == types.TransportAppServer {
+		exec = NewAppServerExec(
+			options.AppServerPathOverride,
+			options.AppServerArgs,
+			options.Env,
+			options.ClientInfo,
+			options.BaseUrl,
+			options.ApiKey,
+		)
 	} else {
-		// Try to find codex in PATH or parent project
-		exec = NewCodexExec("", options.Env)
+		if options.CodexPathOverride != "" {
+			exec = NewCodexExec(options.CodexPathOverride, options.Env)
+		} else {
+			// Try to find codex in PATH or parent project
+			exec = NewCodexExec("", options.Env)
+		}
 	}
 	if options.Verbose {
-		if codexExec, ok := exec.(*CodexExec); ok {
-			codexExec.EnableVerbose(options.VerboseWriter)
+		switch e := exec.(type) {
+		case *CodexExec:
+			e.EnableVerbose(options.VerboseWriter)
+		case *AppServerExec:
+			e.EnableVerbose(options.VerboseWriter)
 		}
 	}
 	return &Codex{
@@ -40,8 +54,11 @@ func NewCodex(options types.CodexOptions) *Codex {
 // This is intended for testing purposes.
 func NewCodexWithExec(exec Exec, options types.CodexOptions) *Codex {
 	if options.Verbose {
-		if codexExec, ok := exec.(*CodexExec); ok {
-			codexExec.EnableVerbose(options.VerboseWriter)
+		switch e := exec.(type) {
+		case *CodexExec:
+			e.EnableVerbose(options.VerboseWriter)
+		case *AppServerExec:
+			e.EnableVerbose(options.VerboseWriter)
 		}
 	}
 	return &Codex{

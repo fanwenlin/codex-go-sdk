@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/fanwenlin/codex-go-sdk/types"
 )
 
 const (
@@ -23,6 +25,8 @@ const (
 // CodexExecArgs represents the arguments for executing a codex command.
 type CodexExecArgs struct {
 	Input string
+	// InputItems preserves structured input for transports that support it.
+	InputItems []types.UserInput
 
 	BaseUrl               string
 	ApiKey                string
@@ -41,6 +45,7 @@ type CodexExecArgs struct {
 	WebSearchMode         string
 	WebSearchEnabled      *bool
 	ApprovalPolicy        string
+	ApprovalHandler       types.ApprovalHandler
 }
 
 // ExecResult represents a result from executing codex.

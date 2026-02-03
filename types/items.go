@@ -1,5 +1,7 @@
 package types
 
+import "encoding/json"
+
 // CommandExecutionStatus represents the status of a command execution.
 type CommandExecutionStatus string
 
@@ -21,6 +23,24 @@ type CommandExecutionItem struct {
 	ExitCode *int `json:"exit_code,omitempty"`
 	// Status is the current status of the command execution
 	Status CommandExecutionStatus `json:"status"`
+}
+
+// UnmarshalJSON supports both snake_case and camelCase field names.
+func (i *CommandExecutionItem) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	i.ID = decodeString(raw, "id")
+	i.Type = decodeString(raw, "type")
+	i.Command = decodeString(raw, "command")
+	i.AggregatedOutput = decodeString(raw, "aggregated_output", "aggregatedOutput", "output")
+	i.ExitCode = decodeIntPtr(raw, "exit_code", "exitCode")
+	status := decodeString(raw, "status")
+	if status != "" {
+		i.Status = CommandExecutionStatus(status)
+	}
+	return nil
 }
 
 // GetType returns the item type discriminator
@@ -59,6 +79,8 @@ type FileChangeItem struct {
 	Changes []FileUpdateChange `json:"changes"`
 	// Status indicates whether the patch ultimately succeeded or failed
 	Status PatchApplyStatus `json:"status"`
+	// Output contains streamed output (when available)
+	Output string `json:"output,omitempty"`
 }
 
 // GetType returns the item type discriminator
@@ -99,6 +121,17 @@ type McpToolCallResult struct {
 	StructuredContent interface{} `json:"structured_content"`
 }
 
+// UnmarshalJSON supports both snake_case and camelCase field names.
+func (r *McpToolCallResult) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	r.Content = decodeAny(raw, "content")
+	r.StructuredContent = decodeAny(raw, "structured_content", "structuredContent")
+	return nil
+}
+
 // McpToolCallError contains error information for failed MCP tool calls.
 type McpToolCallError struct {
 	Message string `json:"message"`
@@ -117,6 +150,18 @@ type AgentMessageItem struct {
 	Text string `json:"text"`
 }
 
+// UnmarshalJSON supports alternate field names.
+func (i *AgentMessageItem) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	i.ID = decodeString(raw, "id")
+	i.Type = decodeString(raw, "type")
+	i.Text = decodeString(raw, "text")
+	return nil
+}
+
 // GetType returns the item type discriminator
 func (i AgentMessageItem) GetType() string {
 	return i.Type
@@ -127,6 +172,18 @@ type ReasoningItem struct {
 	ID   string `json:"id"`
 	Type string `json:"type"`
 	Text string `json:"text"`
+}
+
+// UnmarshalJSON supports alternate field names.
+func (i *ReasoningItem) UnmarshalJSON(data []byte) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	i.ID = decodeString(raw, "id")
+	i.Type = decodeString(raw, "type")
+	i.Text = decodeString(raw, "text", "summaryText", "summary")
+	return nil
 }
 
 // GetType returns the item type discriminator
@@ -180,4 +237,79 @@ func (i ErrorItem) GetType() string {
 // All item types must implement this interface.
 type ThreadItem interface {
 	GetType() string
+}
+
+// UserMessageItem represents a user message in the thread.
+type UserMessageItem struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+// GetType returns the item type discriminator
+func (i UserMessageItem) GetType() string {
+	return i.Type
+}
+
+// ImageViewItem represents an image preview item.
+type ImageViewItem struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+	URL  string `json:"url,omitempty"`
+	Path string `json:"path,omitempty"`
+}
+
+// GetType returns the item type discriminator
+func (i ImageViewItem) GetType() string {
+	return i.Type
+}
+
+// EnteredReviewModeItem represents entering review mode.
+type EnteredReviewModeItem struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// GetType returns the item type discriminator
+func (i EnteredReviewModeItem) GetType() string {
+	return i.Type
+}
+
+// ExitedReviewModeItem represents exiting review mode.
+type ExitedReviewModeItem struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// GetType returns the item type discriminator
+func (i ExitedReviewModeItem) GetType() string {
+	return i.Type
+}
+
+// CompactedItem represents a compacted summary of the thread.
+type CompactedItem struct {
+	ID      string `json:"id"`
+	Type    string `json:"type"`
+	Summary string `json:"summary,omitempty"`
+}
+
+// GetType returns the item type discriminator
+func (i CompactedItem) GetType() string {
+	return i.Type
+}
+
+// CollabToolCallItem represents a collaborative tool call.
+type CollabToolCallItem struct {
+	ID        string            `json:"id"`
+	Type      string            `json:"type"`
+	Tool      string            `json:"tool,omitempty"`
+	Arguments interface{}       `json:"arguments,omitempty"`
+	Result    interface{}       `json:"result,omitempty"`
+	Error     *McpToolCallError `json:"error,omitempty"`
+	Status    string            `json:"status,omitempty"`
+}
+
+// GetType returns the item type discriminator
+func (i CollabToolCallItem) GetType() string {
+	return i.Type
 }

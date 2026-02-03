@@ -1,14 +1,18 @@
 package types
 
 // UserInput represents an input to send to the agent.
-// It can be either text or a local image.
+// It can be text, a local image, a remote image, a skill, or a mention.
 type UserInput struct {
-	// Type is the input type: "text" or "local_image"
+	// Type is the input type: "text", "local_image", "image", "skill", or "mention"
 	Type string `json:"type"`
 	// Text is the text content (when Type is "text")
 	Text string `json:"text,omitempty"`
 	// Path is the local image path (when Type is "local_image")
 	Path string `json:"path,omitempty"`
+	// URL is the remote image URL (when Type is "image")
+	URL string `json:"url,omitempty"`
+	// Name is the identifier for skill or mention inputs
+	Name string `json:"name,omitempty"`
 }
 
 // NewTextInput creates a new text input.
@@ -24,6 +28,30 @@ func NewImageInput(path string) UserInput {
 	return UserInput{
 		Type: "local_image",
 		Path: path,
+	}
+}
+
+// NewImageURLInput creates a new remote image input.
+func NewImageURLInput(url string) UserInput {
+	return UserInput{
+		Type: "image",
+		URL:  url,
+	}
+}
+
+// NewSkillInput creates a new skill input.
+func NewSkillInput(name string) UserInput {
+	return UserInput{
+		Type: "skill",
+		Name: name,
+	}
+}
+
+// NewMentionInput creates a new mention input.
+func NewMentionInput(text string) UserInput {
+	return UserInput{
+		Type: "mention",
+		Text: text,
 	}
 }
 

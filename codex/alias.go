@@ -9,6 +9,10 @@ import (
 type (
 	// ApprovalMode represents the approval mode for actions.
 	ApprovalMode = types.ApprovalMode
+	// ApprovalDecision represents the decision for an approval request.
+	ApprovalDecision = types.ApprovalDecision
+	// TransportMode represents the backend transport.
+	TransportMode = types.TransportMode
 	// SandboxMode represents the sandbox access mode.
 	SandboxMode = types.SandboxMode
 	// ModelReasoningEffort represents the reasoning effort level for the model.
@@ -25,12 +29,24 @@ type (
 	McpToolCallStatus = types.McpToolCallStatus
 )
 
+// Constant values for TransportMode.
+const (
+	TransportAppServer = types.TransportAppServer
+	TransportCLI       = types.TransportCLI
+)
+
 // Constant values for ApprovalMode.
 const (
 	ApprovalModeNever     = types.ApprovalModeNever
 	ApprovalModeOnRequest = types.ApprovalModeOnRequest
 	ApprovalModeOnFailure = types.ApprovalModeOnFailure
 	ApprovalModeUntrusted = types.ApprovalModeUntrusted
+)
+
+// Constant values for ApprovalDecision.
+const (
+	ApprovalDecisionApproved = types.ApprovalDecisionApproved
+	ApprovalDecisionRejected = types.ApprovalDecisionRejected
 )
 
 // Constant values for SandboxMode.
@@ -76,30 +92,40 @@ type (
 	ItemUpdatedEvent   = types.ItemUpdatedEvent
 	ItemCompletedEvent = types.ItemCompletedEvent
 	ThreadErrorEvent   = types.ThreadErrorEvent
+	RawEvent           = types.RawEvent
 )
 
 // Re-export item types.
 type (
-	ThreadItem           = types.ThreadItem
-	CommandExecutionItem = types.CommandExecutionItem
-	FileUpdateChange     = types.FileUpdateChange
-	FileChangeItem       = types.FileChangeItem
-	McpToolCallItem      = types.McpToolCallItem
-	McpToolCallResult    = types.McpToolCallResult
-	McpToolCallError     = types.McpToolCallError
-	AgentMessageItem     = types.AgentMessageItem
-	ReasoningItem        = types.ReasoningItem
-	WebSearchItem        = types.WebSearchItem
-	TodoItem             = types.TodoItem
-	TodoListItem         = types.TodoListItem
-	ErrorItem            = types.ErrorItem
+	ThreadItem            = types.ThreadItem
+	CommandExecutionItem  = types.CommandExecutionItem
+	FileUpdateChange      = types.FileUpdateChange
+	FileChangeItem        = types.FileChangeItem
+	McpToolCallItem       = types.McpToolCallItem
+	McpToolCallResult     = types.McpToolCallResult
+	McpToolCallError      = types.McpToolCallError
+	AgentMessageItem      = types.AgentMessageItem
+	ReasoningItem         = types.ReasoningItem
+	WebSearchItem         = types.WebSearchItem
+	TodoItem              = types.TodoItem
+	TodoListItem          = types.TodoListItem
+	ErrorItem             = types.ErrorItem
+	UserMessageItem       = types.UserMessageItem
+	ImageViewItem         = types.ImageViewItem
+	EnteredReviewModeItem = types.EnteredReviewModeItem
+	ExitedReviewModeItem  = types.ExitedReviewModeItem
+	CompactedItem         = types.CompactedItem
+	CollabToolCallItem    = types.CollabToolCallItem
 )
 
 // Re-export option types.
 type (
-	CodexOptions  = types.CodexOptions
-	ThreadOptions = types.ThreadOptions
-	TurnOptions   = types.TurnOptions
+	CodexOptions    = types.CodexOptions
+	ClientInfo      = types.ClientInfo
+	ThreadOptions   = types.ThreadOptions
+	TurnOptions     = types.TurnOptions
+	ApprovalRequest = types.ApprovalRequest
+	ApprovalHandler = types.ApprovalHandler
 )
 
 // Re-export alias types.
@@ -116,8 +142,11 @@ type (
 //
 //nolint:gochecknoglobals // These are intentional function aliases for convenience
 var (
-	NewTextInput  = types.NewTextInput
-	NewImageInput = types.NewImageInput
+	NewTextInput     = types.NewTextInput
+	NewImageInput    = types.NewImageInput
+	NewImageURLInput = types.NewImageURLInput
+	NewSkillInput    = types.NewSkillInput
+	NewMentionInput  = types.NewMentionInput
 )
 
 // Classes and functions are already exported from other files
