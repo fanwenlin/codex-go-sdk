@@ -31,8 +31,8 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 	}
 
 	var tempMap map[string]interface{}
-	if err := json.Unmarshal(schemaBytes, &tempMap); err != nil {
-		return nil, err
+	if unmarshalErr := json.Unmarshal(schemaBytes, &tempMap); unmarshalErr != nil {
+		return nil, unmarshalErr
 	}
 
 	// Create temporary directory
@@ -44,9 +44,9 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 	schemaPath := filepath.Join(tempDir, "schema.json")
 
 	// Write schema to file
-	if err := os.WriteFile(schemaPath, schemaBytes, 0600); err != nil {
+	if writeErr := os.WriteFile(schemaPath, schemaBytes, 0600); writeErr != nil {
 		_ = os.RemoveAll(tempDir)
-		return nil, err
+		return nil, writeErr
 	}
 
 	// Create cleanup function

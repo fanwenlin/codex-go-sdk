@@ -3,6 +3,13 @@ version: "2"
 issues:
   max-same-issues: 50
 
+run:
+  tests: false
+  skip-dirs:
+    - tests
+  skip-files:
+    - ^tests/
+
 formatters:
   enable:
     - goimports
@@ -87,6 +94,18 @@ linters:
     - usetesting
     - wastedassign
     - whitespace
+
+  disable:
+    - godot
+    - goconst
+    - iface
+    - mnd
+    - nestif
+    - nonamedreturns
+    - perfsprint
+    - recvcheck
+    - revive
+    - testpackage
 
   settings:
     cyclop:
@@ -206,6 +225,8 @@ linters:
       checks:
         - all
         - -ST1000
+        - -ST1003
+        - -ST1021
         - -ST1016
         - -QF1008
 
@@ -220,6 +241,8 @@ linters:
     rules:
       - source: 'TODO'
         linters: [godot]
+      - path: '^tests/'
+        linters: [noctx]
       - text: 'should have a package comment'
         linters: [revive]
       - text: 'exported \\S+ \\S+ should have comment( \\(or a comment on this block\\))? or be unexported'

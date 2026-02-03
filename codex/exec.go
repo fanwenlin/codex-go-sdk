@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -93,53 +94,81 @@ func (c *CodexExec) logf(format string, args ...interface{}) {
 	fmt.Fprintf(c.verboseWriter, format+"\n", args...)
 }
 
-func summarizeEventLine(line string) string {
-	var meta struct {
+type eventSummaryMeta struct {
+	Type string `json:"type"`
+	Item *struct {
 		Type string `json:"type"`
-		Item *struct {
-			Type string `json:"type"`
-			// Common item fields used for debugging output.
-			Status   string `json:"status"`
-			Command  string `json:"command"`
-			ExitCode *int   `json:"exit_code"`
-			Server   string `json:"server"`
-			Tool     string `json:"tool"`
-		} `json:"item"`
-		Error *struct {
-			Message string `json:"message"`
-		} `json:"error"`
-	}
-	if err := json.Unmarshal([]byte(line), &meta); err != nil {
-		return fmt.Sprintf("stdout line (%d bytes)", len(line))
-	}
-	if meta.Type == "" {
+		// Common item fields used for debugging output.
+		Status   string `json:"status"`
+		Command  string `json:"command"`
+		ExitCode *int   `json:"exit_code"`
+		Server   string `json:"server"`
+		Tool     string `json:"tool"`
+	} `json:"item"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func summarizeEventLine(line string) string {
+	meta, ok := parseEventSummaryMeta(line)
+	if !ok || meta.Type == "" {
 		return fmt.Sprintf("stdout line (%d bytes)", len(line))
 	}
 
 	summary := fmt.Sprintf("event %s", meta.Type)
-	if meta.Item != nil && meta.Item.Type != "" {
-		summary = fmt.Sprintf("%s item=%s", summary, meta.Item.Type)
-		switch meta.Item.Type {
-		case "command_execution":
-			if meta.Item.Status != "" {
-				summary = fmt.Sprintf("%s status=%s", summary, meta.Item.Status)
-			}
-			if meta.Item.ExitCode != nil {
-				summary = fmt.Sprintf("%s exit=%d", summary, *meta.Item.ExitCode)
-			}
-			if meta.Item.Command != "" {
-				summary = fmt.Sprintf("%s cmd=%q", summary, meta.Item.Command)
-			}
-		case "mcp_tool_call":
-			if meta.Item.Server != "" || meta.Item.Tool != "" {
-				summary = fmt.Sprintf("%s mcp=%s/%s", summary, meta.Item.Server, meta.Item.Tool)
-			}
+	summary = appendItemSummary(summary, meta.Item)
+	summary = appendErrorSummary(summary, meta.Error)
+	return summary
+}
+
+func parseEventSummaryMeta(line string) (eventSummaryMeta, bool) {
+	var meta eventSummaryMeta
+	if err := json.Unmarshal([]byte(line), &meta); err != nil {
+		return meta, false
+	}
+	return meta, true
+}
+
+func appendItemSummary(summary string, item *struct {
+	Type string `json:"type"`
+	// Common item fields used for debugging output.
+	Status   string `json:"status"`
+	Command  string `json:"command"`
+	ExitCode *int   `json:"exit_code"`
+	Server   string `json:"server"`
+	Tool     string `json:"tool"`
+}) string {
+	if item == nil || item.Type == "" {
+		return summary
+	}
+	summary = fmt.Sprintf("%s item=%s", summary, item.Type)
+	switch item.Type {
+	case "command_execution":
+		if item.Status != "" {
+			summary = fmt.Sprintf("%s status=%s", summary, item.Status)
+		}
+		if item.ExitCode != nil {
+			summary = fmt.Sprintf("%s exit=%d", summary, *item.ExitCode)
+		}
+		if item.Command != "" {
+			summary = fmt.Sprintf("%s cmd=%q", summary, item.Command)
+		}
+	case "mcp_tool_call":
+		if item.Server != "" || item.Tool != "" {
+			summary = fmt.Sprintf("%s mcp=%s/%s", summary, item.Server, item.Tool)
 		}
 	}
-	if meta.Error != nil && meta.Error.Message != "" {
-		summary = fmt.Sprintf("%s error=%q", summary, meta.Error.Message)
-	}
 	return summary
+}
+
+func appendErrorSummary(summary string, metaError *struct {
+	Message string `json:"message"`
+}) string {
+	if metaError == nil || metaError.Message == "" {
+		return summary
+	}
+	return fmt.Sprintf("%s error=%q", summary, metaError.Message)
 }
 
 // Run executes codex with the given arguments and returns a channel of results.
@@ -149,78 +178,8 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 	go func() {
 		defer close(output)
 
-		ctx := args.Context
-		if ctx == nil {
-			ctx = context.Background()
-		}
-
-		commandArgs := []string{"exec", "--experimental-json"}
-
-		if args.Model != "" {
-			commandArgs = append(commandArgs, "--model", args.Model)
-		}
-
-		if args.SandboxMode != "" {
-			commandArgs = append(commandArgs, "--sandbox", args.SandboxMode)
-		}
-
-		if args.WorkingDirectory != "" {
-			commandArgs = append(commandArgs, "--cd", args.WorkingDirectory)
-		}
-
-		for _, dir := range args.AdditionalDirectories {
-			commandArgs = append(commandArgs, "--add-dir", dir)
-		}
-
-		if args.SkipGitRepoCheck {
-			commandArgs = append(commandArgs, "--skip-git-repo-check")
-		}
-
-		if args.DisableSkills {
-			commandArgs = append(commandArgs, "--config", "features.skills=false")
-		}
-
-		if args.OutputSchemaFile != "" {
-			commandArgs = append(commandArgs, "--output-schema", args.OutputSchemaFile)
-		}
-
-		if args.ModelReasoningEffort != "" {
-			commandArgs = append(
-				commandArgs,
-				"--config",
-				fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort),
-			)
-		}
-
-		if args.NetworkAccessEnabled {
-			commandArgs = append(
-				commandArgs,
-				"--config",
-				fmt.Sprintf(`sandbox_workspace_write.network_access=%t`, args.NetworkAccessEnabled),
-			)
-		}
-
-		if args.WebSearchMode != "" {
-			commandArgs = append(commandArgs, "--config", fmt.Sprintf(`web_search="%s"`, args.WebSearchMode))
-		} else if args.WebSearchEnabled != nil {
-			if *args.WebSearchEnabled {
-				commandArgs = append(commandArgs, "--config", `web_search="live"`)
-			} else {
-				commandArgs = append(commandArgs, "--config", `web_search="disabled"`)
-			}
-		}
-
-		if args.ApprovalPolicy != "" {
-			commandArgs = append(commandArgs, "--config", fmt.Sprintf(`approval_policy="%s"`, args.ApprovalPolicy))
-		}
-
-		for _, image := range args.Images {
-			commandArgs = append(commandArgs, "--image", image)
-		}
-
-		if args.ThreadId != nil {
-			commandArgs = append(commandArgs, "resume", *args.ThreadId)
-		}
+		ctx := resolveContext(args.Context)
+		commandArgs := buildCommandArgs(args)
 
 		c.logf("codex exec: %s %s", c.executablePath, strings.Join(commandArgs, " "))
 		if args.ThreadId != nil {
@@ -228,37 +187,11 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 		}
 		c.logf("codex exec input bytes: %d", len(args.Input))
 
-		// Set up environment
-		env := os.Environ()
-		if c.envOverride != nil {
-			env = []string{}
-			for k, v := range c.envOverride {
-				env = append(env, fmt.Sprintf("%s=%s", k, v))
-			}
-		}
+		env := buildExecEnv(c.envOverride, args)
 
-		// Check for internal originator override
-		foundOriginator := false
-		for _, e := range env {
-			if strings.HasPrefix(e, envInternalOriginatorOverrideKey+"=") {
-				foundOriginator = true
-				break
-			}
-		}
-		if !foundOriginator {
-			env = append(env, envInternalOriginatorOverrideKey+"=codex_sdk_go")
-		}
-
-		// Set API key and base URL
-		if args.BaseUrl != "" {
-			env = append(env, fmt.Sprintf("%s=%s", envBaseURLKey, args.BaseUrl))
-		}
-		if args.ApiKey != "" {
-			env = append(env, fmt.Sprintf("%s=%s", envCodexAPIEnvVar, args.ApiKey))
-		}
-
-		// Create command
-		cmd := exec.Command(c.executablePath, commandArgs...)
+		// Create command.
+		// #nosec G204 -- Executable path and args are user-provided by design in SDK integrations.
+		cmd := exec.CommandContext(ctx, c.executablePath, commandArgs...)
 		cmd.Env = env
 
 		// Set up stdin
@@ -283,104 +216,25 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 		}
 
 		// Start the command
-		if err := cmd.Start(); err != nil {
-			output <- ExecResult{Error: fmt.Errorf("failed to start codex: %w", err)}
+		if startErr := cmd.Start(); startErr != nil {
+			output <- ExecResult{Error: fmt.Errorf("failed to start codex: %w", startErr)}
 			return
 		}
 		if cmd.Process != nil {
 			c.logf("codex exec started (pid %d)", cmd.Process.Pid)
 		}
 
-		// Write input to stdin
-		go func() {
-			defer stdin.Close()
-			written, err := stdin.Write([]byte(args.Input))
-			if err != nil {
-				// Error will be picked up from stderr or exit code
-				return
-			}
-			c.logf("codex exec stdin wrote %d bytes", written)
-		}()
+		c.startInputWriter(stdin, args.Input)
+		stderrBuilder, stderrWg := c.startStderrCapture(stderr)
+		done := c.startStdoutReader(ctx, stdout, output, cmd)
 
-		// Capture stderr
-		var stderrBuilder strings.Builder
-		var stderrWg sync.WaitGroup
-		stderrWg.Add(1)
-		go func() {
-			defer stderrWg.Done()
-			reader := bufio.NewReader(stderr)
-			for {
-				line, err := reader.ReadString('\n')
-				if len(line) > 0 {
-					stderrBuilder.WriteString(line)
-					c.logf("codex exec stderr: %s", strings.TrimRight(line, "\r\n"))
-				}
-				if err != nil {
-					if err != io.EOF {
-						c.logf("codex exec stderr read error: %v", err)
-					}
-					return
-				}
-			}
-		}()
-
-		// Create a context-aware reader
-		done := make(chan struct{})
-
-		go func() {
-			defer close(done)
-			reader := bufio.NewReader(stdout)
-			for {
-				line, err := reader.ReadString('\n')
-				if len(line) > 0 {
-					line = strings.TrimRight(line, "\r\n")
-					if line != "" {
-						c.logf("codex exec stdout: %s", summarizeEventLine(line))
-					}
-					select {
-					case output <- ExecResult{Line: line}:
-					case <-ctx.Done():
-						if cmd.Process != nil {
-							_ = cmd.Process.Kill()
-						}
-						return
-					}
-				}
-				if err != nil {
-					if err == io.EOF {
-						return
-					}
-					output <- ExecResult{Error: fmt.Errorf("failed to read codex stdout: %w", err)}
-					return
-				}
-			}
-		}()
-
-		// Wait for completion or context cancellation
-		select {
-		case <-done:
-			// Scanner finished
-		case <-ctx.Done():
-			if cmd.Process != nil {
-				_ = cmd.Process.Kill()
-			}
-			output <- ExecResult{Error: ctx.Err()}
+		if waitErr := waitForCompletion(ctx, done, cmd, output); waitErr != nil {
 			return
 		}
 
-		// Wait for stderr
 		stderrWg.Wait()
 
-		// Wait for command to finish
-		if err := cmd.Wait(); err != nil {
-			c.logf("codex exec exited with error: %v", err)
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				output <- ExecResult{
-					Error: fmt.Errorf("codex exited with code %d: %s", exitErr.ExitCode(), stderrBuilder.String()),
-				}
-			} else {
-				output <- ExecResult{Error: fmt.Errorf("codex execution failed: %w", err)}
-			}
+		if waitErr := c.waitForCommand(cmd, stderrBuilder, output); waitErr != nil {
 			return
 		}
 		c.logf("codex exec completed")
@@ -389,135 +243,383 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 	return output
 }
 
+func resolveContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		return context.Background()
+	}
+	return ctx
+}
+
+func buildCommandArgs(args CodexExecArgs) []string {
+	commandArgs := []string{"exec", "--experimental-json"}
+	commandArgs = appendModelArgs(commandArgs, args)
+	commandArgs = appendSandboxArgs(commandArgs, args)
+	commandArgs = appendWorkingDirArgs(commandArgs, args)
+	commandArgs = appendAdditionalDirArgs(commandArgs, args)
+	commandArgs = appendFeatureArgs(commandArgs, args)
+	commandArgs = appendConfigArgs(commandArgs, args)
+	commandArgs = appendImageArgs(commandArgs, args)
+	commandArgs = appendThreadArgs(commandArgs, args)
+	return commandArgs
+}
+
+func appendModelArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.Model != "" {
+		commandArgs = append(commandArgs, "--model", args.Model)
+	}
+	return commandArgs
+}
+
+func appendSandboxArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.SandboxMode != "" {
+		commandArgs = append(commandArgs, "--sandbox", args.SandboxMode)
+	}
+	return commandArgs
+}
+
+func appendWorkingDirArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.WorkingDirectory != "" {
+		commandArgs = append(commandArgs, "--cd", args.WorkingDirectory)
+	}
+	return commandArgs
+}
+
+func appendAdditionalDirArgs(commandArgs []string, args CodexExecArgs) []string {
+	for _, dir := range args.AdditionalDirectories {
+		commandArgs = append(commandArgs, "--add-dir", dir)
+	}
+	return commandArgs
+}
+
+func appendFeatureArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.SkipGitRepoCheck {
+		commandArgs = append(commandArgs, "--skip-git-repo-check")
+	}
+	if args.DisableSkills {
+		commandArgs = append(commandArgs, "--config", "features.skills=false")
+	}
+	if args.OutputSchemaFile != "" {
+		commandArgs = append(commandArgs, "--output-schema", args.OutputSchemaFile)
+	}
+	return commandArgs
+}
+
+func appendConfigArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.ModelReasoningEffort != "" {
+		commandArgs = append(
+			commandArgs,
+			"--config",
+			fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort),
+		)
+	}
+	if args.NetworkAccessEnabled {
+		commandArgs = append(
+			commandArgs,
+			"--config",
+			fmt.Sprintf(`sandbox_workspace_write.network_access=%t`, args.NetworkAccessEnabled),
+		)
+	}
+	commandArgs = appendWebSearchArgs(commandArgs, args)
+	if args.ApprovalPolicy != "" {
+		commandArgs = append(commandArgs, "--config", fmt.Sprintf(`approval_policy="%s"`, args.ApprovalPolicy))
+	}
+	return commandArgs
+}
+
+func appendWebSearchArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.WebSearchMode != "" {
+		return append(commandArgs, "--config", fmt.Sprintf(`web_search="%s"`, args.WebSearchMode))
+	}
+	if args.WebSearchEnabled == nil {
+		return commandArgs
+	}
+	if *args.WebSearchEnabled {
+		return append(commandArgs, "--config", `web_search="live"`)
+	}
+	return append(commandArgs, "--config", `web_search="disabled"`)
+}
+
+func appendImageArgs(commandArgs []string, args CodexExecArgs) []string {
+	for _, image := range args.Images {
+		commandArgs = append(commandArgs, "--image", image)
+	}
+	return commandArgs
+}
+
+func appendThreadArgs(commandArgs []string, args CodexExecArgs) []string {
+	if args.ThreadId != nil {
+		commandArgs = append(commandArgs, "resume", *args.ThreadId)
+	}
+	return commandArgs
+}
+
+func buildExecEnv(envOverride map[string]string, args CodexExecArgs) []string {
+	env := os.Environ()
+	if envOverride != nil {
+		env = []string{}
+		for k, v := range envOverride {
+			env = append(env, fmt.Sprintf("%s=%s", k, v))
+		}
+	}
+
+	if !hasOriginatorOverride(env) {
+		env = append(env, envInternalOriginatorOverrideKey+"=codex_sdk_go")
+	}
+
+	if args.BaseUrl != "" {
+		env = append(env, fmt.Sprintf("%s=%s", envBaseURLKey, args.BaseUrl))
+	}
+	if args.ApiKey != "" {
+		env = append(env, fmt.Sprintf("%s=%s", envCodexAPIEnvVar, args.ApiKey))
+	}
+	return env
+}
+
+func hasOriginatorOverride(env []string) bool {
+	for _, entry := range env {
+		if strings.HasPrefix(entry, envInternalOriginatorOverrideKey+"=") {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *CodexExec) startInputWriter(stdin io.WriteCloser, input string) {
+	go func() {
+		defer stdin.Close()
+		written, writeErr := stdin.Write([]byte(input))
+		if writeErr != nil {
+			// Error will be picked up from stderr or exit code.
+			return
+		}
+		c.logf("codex exec stdin wrote %d bytes", written)
+	}()
+}
+
+func (c *CodexExec) startStderrCapture(stderr io.Reader) (*strings.Builder, *sync.WaitGroup) {
+	var stderrBuilder strings.Builder
+	var stderrWg sync.WaitGroup
+	stderrWg.Add(1)
+	go func() {
+		defer stderrWg.Done()
+		reader := bufio.NewReader(stderr)
+		for {
+			line, readErr := reader.ReadString('\n')
+			if len(line) > 0 {
+				stderrBuilder.WriteString(line)
+				c.logf("codex exec stderr: %s", strings.TrimRight(line, "\r\n"))
+			}
+			if readErr != nil {
+				if readErr != io.EOF {
+					c.logf("codex exec stderr read error: %v", readErr)
+				}
+				return
+			}
+		}
+	}()
+	return &stderrBuilder, &stderrWg
+}
+
+func (c *CodexExec) startStdoutReader(
+	ctx context.Context,
+	stdout io.Reader,
+	output chan ExecResult,
+	cmd *exec.Cmd,
+) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		reader := bufio.NewReader(stdout)
+		for {
+			line, readErr := reader.ReadString('\n')
+			if len(line) > 0 {
+				line = strings.TrimRight(line, "\r\n")
+				if line != "" {
+					c.logf("codex exec stdout: %s", summarizeEventLine(line))
+				}
+				select {
+				case output <- ExecResult{Line: line}:
+				case <-ctx.Done():
+					killProcess(cmd)
+					return
+				}
+			}
+			if readErr != nil {
+				if readErr == io.EOF {
+					return
+				}
+				output <- ExecResult{Error: fmt.Errorf("failed to read codex stdout: %w", readErr)}
+				return
+			}
+		}
+	}()
+	return done
+}
+
+func waitForCompletion(ctx context.Context, done <-chan struct{}, cmd *exec.Cmd, output chan ExecResult) error {
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		killProcess(cmd)
+		output <- ExecResult{Error: ctx.Err()}
+		return ctx.Err()
+	}
+}
+
+func (c *CodexExec) waitForCommand(cmd *exec.Cmd, stderrBuilder *strings.Builder, output chan ExecResult) error {
+	if err := cmd.Wait(); err != nil {
+		c.logf("codex exec exited with error: %v", err)
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			output <- ExecResult{
+				Error: fmt.Errorf("codex exited with code %d: %s", exitErr.ExitCode(), stderrBuilder.String()),
+			}
+		} else {
+			output <- ExecResult{Error: fmt.Errorf("codex execution failed: %w", err)}
+		}
+		return err
+	}
+	return nil
+}
+
+func killProcess(cmd *exec.Cmd) {
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
+	}
+}
+
 // findCodexPath finds the path to the codex binary based on platform and architecture.
 func findCodexPath() string {
 	platform := runtime.GOOS
 	arch := runtime.GOARCH
 
-	var targetTriple string
+	targetTriple := resolveTargetTriple(platform, arch)
+	binaryName := resolveBinaryName(platform)
 
+	if path, ok := findBinaryFromExecutable(targetTriple, binaryName); ok {
+		return path
+	}
+	if path, ok := findBinaryFromCwd(targetTriple, binaryName); ok {
+		return path
+	}
+	if path, ok := findBinaryFromHome(targetTriple, binaryName); ok {
+		return path
+	}
+	if path, ok := findBinaryInPath(binaryName); ok {
+		return path
+	}
+
+	// Last resort: return the default relative path even if it doesn't exist.
+	// The error will be handled when trying to execute it.
+	return vendorBinaryPath(filepath.Join("..", "codex-go-sdk", "vendor"), targetTriple, binaryName)
+}
+
+func resolveTargetTriple(platform, arch string) string {
 	switch platform {
 	case "linux":
 		switch arch {
 		case "amd64":
-			targetTriple = "x86_64-unknown-linux-musl"
+			return "x86_64-unknown-linux-musl"
 		case "arm64":
-			targetTriple = "aarch64-unknown-linux-musl"
+			return "aarch64-unknown-linux-musl"
 		default:
 			panic(fmt.Sprintf("unsupported architecture on linux: %s", arch))
 		}
 	case "darwin":
 		switch arch {
 		case "amd64":
-			targetTriple = "x86_64-apple-darwin"
+			return "x86_64-apple-darwin"
 		case "arm64":
-			targetTriple = "aarch64-apple-darwin"
+			return "aarch64-apple-darwin"
 		default:
 			panic(fmt.Sprintf("unsupported architecture on darwin: %s", arch))
 		}
 	case "windows":
 		switch arch {
 		case "amd64":
-			targetTriple = "x86_64-pc-windows-msvc"
+			return "x86_64-pc-windows-msvc"
 		case "arm64":
-			targetTriple = "aarch64-pc-windows-msvc"
+			return "aarch64-pc-windows-msvc"
 		default:
 			panic(fmt.Sprintf("unsupported architecture on windows: %s", arch))
 		}
 	default:
 		panic(fmt.Sprintf("unsupported platform: %s (%s)", platform, arch))
 	}
+}
 
-	// First, try to find the codex binary relative to the currently running binary
-	// This handles the case where codex-orchestrator is installed in $GOPATH/bin
-	if execPath, err := os.Executable(); err == nil {
-		// Get the directory where the running binary is located
-		binDir := filepath.Dir(execPath)
+func resolveBinaryName(platform string) string {
+	if platform == "windows" {
+		return "codex.exe"
+	}
+	return "codex"
+}
 
-		// Try to find vendor directory in parent directories
-		// Look for patterns like:
-		// - $GOPATH/bin/codex-orchestrator -> $GOPATH/src/github.com/.../codex-go-sdk/vendor
-		// - ./bin/codex-orchestrator -> ./vendor
-		// - ./codex-orchestrator -> ./vendor
+func findBinaryFromExecutable(targetTriple, binaryName string) (string, bool) {
+	execPath, execErr := os.Executable()
+	if execErr != nil {
+		return "", false
+	}
+	binDir := filepath.Dir(execPath)
 
-		// Search parent directories for vendor folder
-		currentDir := binDir
-		for i := 0; i < 5; i++ { // Search up to 5 levels
-			// Try vendor at this level
-			vendorRoot := filepath.Join(currentDir, "vendor")
-			archRoot := filepath.Join(vendorRoot, targetTriple)
-			binaryName := "codex"
-			if platform == "windows" {
-				binaryName = "codex.exe"
-			}
-			binaryPath := filepath.Join(archRoot, "codex", binaryName)
-
-			if _, err := os.Stat(binaryPath); err == nil {
-				return binaryPath
-			}
-
-			// Move up one directory
-			parentDir := filepath.Dir(currentDir)
-			if parentDir == currentDir {
-				break // Reached filesystem root
-			}
-			currentDir = parentDir
+	currentDir := binDir
+	for i := 0; i < 5; i++ {
+		vendorRoot := filepath.Join(currentDir, "vendor")
+		binaryPath := vendorBinaryPath(vendorRoot, targetTriple, binaryName)
+		if fileExists(binaryPath) {
+			return binaryPath, true
 		}
-
-		// Also try relative to bin directory for local development
-		// ./bin/codex-orchestrator -> ../codex-go-sdk/vendor
-		vendorRoot := filepath.Join(binDir, "..", "codex-go-sdk", "vendor")
-		archRoot := filepath.Join(vendorRoot, targetTriple)
-		binaryName := "codex"
-		if platform == "windows" {
-			binaryName = "codex.exe"
+		parentDir := filepath.Dir(currentDir)
+		if parentDir == currentDir {
+			break
 		}
-		binaryPath := filepath.Join(archRoot, "codex", binaryName)
-
-		if _, err := os.Stat(binaryPath); err == nil {
-			return binaryPath
-		}
+		currentDir = parentDir
 	}
 
-	// Fallback 1: Try relative to current working directory (original behavior)
+	vendorRoot := filepath.Join(binDir, "..", "codex-go-sdk", "vendor")
+	binaryPath := vendorBinaryPath(vendorRoot, targetTriple, binaryName)
+	if fileExists(binaryPath) {
+		return binaryPath, true
+	}
+	return "", false
+}
+
+func findBinaryFromCwd(targetTriple, binaryName string) (string, bool) {
 	vendorRoot := filepath.Join("..", "codex-go-sdk", "vendor")
-	archRoot := filepath.Join(vendorRoot, targetTriple)
-	binaryName := "codex"
-	if platform == "windows" {
-		binaryName = "codex.exe"
+	binaryPath := vendorBinaryPath(vendorRoot, targetTriple, binaryName)
+	if fileExists(binaryPath) {
+		return binaryPath, true
 	}
-	binaryPath := filepath.Join(archRoot, "codex", binaryName)
+	return "", false
+}
 
-	if _, err := os.Stat(binaryPath); err == nil {
-		return binaryPath
-	}
-
-	// Fallback 2: Try in ~/.codex-orchestrator/vendor
+func findBinaryFromHome(targetTriple, binaryName string) (string, bool) {
 	homeDir, err := os.UserHomeDir()
-	if err == nil {
-		vendorRoot := filepath.Join(homeDir, ".codex-orchestrator", "vendor")
-		archRoot := filepath.Join(vendorRoot, targetTriple)
-		binaryName := "codex"
-		if platform == "windows" {
-			binaryName = "codex.exe"
-		}
-		binaryPath := filepath.Join(archRoot, "codex", binaryName)
-
-		if _, err := os.Stat(binaryPath); err == nil {
-			return binaryPath
-		}
+	if err != nil {
+		return "", false
 	}
-
-	// Fallback 3: Try to find codex in PATH
-	lookupName := "codex"
-	if platform == "windows" {
-		lookupName = "codex.exe"
+	vendorRoot := filepath.Join(homeDir, ".codex-orchestrator", "vendor")
+	binaryPath := vendorBinaryPath(vendorRoot, targetTriple, binaryName)
+	if fileExists(binaryPath) {
+		return binaryPath, true
 	}
-	if path, err := exec.LookPath(lookupName); err == nil {
-		return path
-	}
+	return "", false
+}
 
-	// Last resort: return the default relative path even if it doesn't exist
-	// The error will be handled when trying to execute it
-	return binaryPath
+func findBinaryInPath(binaryName string) (string, bool) {
+	path, err := exec.LookPath(binaryName)
+	if err != nil {
+		return "", false
+	}
+	return path, true
+}
+
+func vendorBinaryPath(vendorRoot, targetTriple, binaryName string) string {
+	return filepath.Join(vendorRoot, targetTriple, "codex", binaryName)
+}
+
+func fileExists(path string) bool {
+	_, statErr := os.Stat(path)
+	return statErr == nil
 }
