@@ -131,7 +131,7 @@ func (a *AppServerExec) ensureStarted() error {
 
 func (a *AppServerExec) start() error {
 	// #nosec G204 -- Executable path and args are user-provided by design in SDK integrations.
-	cmd := exec.Command(a.executablePath, a.args...)
+	cmd := exec.CommandContext(context.Background(), a.executablePath, a.args...)
 
 	// Set up environment
 	env := os.Environ()
@@ -423,10 +423,7 @@ func (a *AppServerExec) startTurn(ctx context.Context, threadID string, args Cod
 }
 
 func (a *AppServerExec) buildTurnParams(threadID string, args CodexExecArgs) (map[string]interface{}, error) {
-	inputItems, err := buildInputItems(args)
-	if err != nil {
-		return nil, err
-	}
+	inputItems := buildInputItems(args)
 
 	turnParams := map[string]interface{}{
 		"threadId": threadID,
@@ -482,18 +479,9 @@ func (a *AppServerExec) streamTurn(
 			if !ok {
 				return nil
 			}
-			if !eventMatchesTurn(event, threadID, turnID) {
-				continue
-			}
-			if args.ApprovalHandler != nil && isApprovalRequestedEvent(event.Method) {
-				a.submitApproval(ctx, event, args.ApprovalHandler)
-			}
-			line, done, err := appEventToLegacyLine(event, state)
+			done, err := a.handleTurnEvent(ctx, event, threadID, turnID, args, state, output)
 			if err != nil {
 				return err
-			}
-			if line != "" {
-				output <- ExecResult{Line: line}
 			}
 			if done {
 				return nil
@@ -553,6 +541,31 @@ type turnState struct {
 	items map[string]map[string]interface{}
 }
 
+func (a *AppServerExec) handleTurnEvent(
+	ctx context.Context,
+	event appEvent,
+	threadID string,
+	turnID string,
+	args CodexExecArgs,
+	state *turnState,
+	output chan ExecResult,
+) (bool, error) {
+	if !eventMatchesTurn(event, threadID, turnID) {
+		return false, nil
+	}
+	if args.ApprovalHandler != nil && isApprovalRequestedEvent(event.Method) {
+		a.submitApproval(ctx, event, args.ApprovalHandler)
+	}
+	line, done, err := appEventToLegacyLine(event, state)
+	if err != nil {
+		return false, err
+	}
+	if line != "" {
+		output <- ExecResult{Line: line}
+	}
+	return done, nil
+}
+
 func appEventToLegacyLine(event appEvent, state *turnState) (string, bool, error) {
 	method := event.Method
 	switch method {
@@ -575,9 +588,9 @@ func appEventToLegacyLine(event appEvent, state *turnState) (string, bool, error
 	}
 	payload["type"] = strings.ReplaceAll(method, "/", ".")
 
-	if item, ok := payload["item"].(map[string]interface{}); ok {
-		if id, ok := item["id"].(string); ok {
-			state.items[id] = item
+	if itemPayload, ok := payload["item"].(map[string]interface{}); ok {
+		if id, okID := itemPayload["id"].(string); okID {
+			state.items[id] = itemPayload
 		}
 	}
 
@@ -610,7 +623,7 @@ func applyTextDelta(event appEvent, state *turnState, itemType string, field str
 		state.items[params.ItemID] = item
 	}
 	if params.Delta != "" {
-		if existing, ok := item[field].(string); ok {
+		if existing, okExisting := item[field].(string); okExisting {
 			item[field] = existing + params.Delta
 		} else {
 			item[field] = params.Delta
@@ -703,7 +716,7 @@ func (a *AppServerExec) submitApproval(ctx context.Context, event appEvent, hand
 	}
 }
 
-func buildInputItems(args CodexExecArgs) ([]map[string]interface{}, error) {
+func buildInputItems(args CodexExecArgs) []map[string]interface{} {
 	inputItems := args.InputItems
 	if len(inputItems) == 0 && args.Input != "" {
 		inputItems = []types.UserInput{types.NewTextInput(args.Input)}
@@ -716,7 +729,7 @@ func buildInputItems(args CodexExecArgs) ([]map[string]interface{}, error) {
 	for _, image := range args.Images {
 		appendLocalImage(&items, image)
 	}
-	return items, nil
+	return items
 }
 
 func appendInputItem(items *[]map[string]interface{}, item types.UserInput) {

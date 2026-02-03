@@ -124,10 +124,15 @@ type (
 type CodexOptions = types.CodexOptions
 
 type (
-	ClientInfo      = types.ClientInfo
-	ThreadOptions   = types.ThreadOptions
-	TurnOptions     = types.TurnOptions
+	// ClientInfo identifies the SDK client sending requests.
+	ClientInfo = types.ClientInfo
+	// ThreadOptions configures thread creation and resume behavior.
+	ThreadOptions = types.ThreadOptions
+	// TurnOptions configures turn execution behavior.
+	TurnOptions = types.TurnOptions
+	// ApprovalRequest carries a pending approval request payload.
 	ApprovalRequest = types.ApprovalRequest
+	// ApprovalHandler handles approval requests from the app server.
 	ApprovalHandler = types.ApprovalHandler
 )
 
