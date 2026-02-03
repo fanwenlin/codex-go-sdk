@@ -132,7 +132,8 @@ type ThreadOptions struct {
 
 // TurnOptions represents options for a turn.
 type TurnOptions struct {
-	// OutputSchema is a JSON schema describing the expected agent output
+	// OutputSchema is a JSON schema (map/struct) describing the expected agent output.
+	// Structs will be reflected into JSON Schema using json tags and omitempty to mark optional fields.
 	OutputSchema interface{}
 	// Context is a context.Context for cancellation (replaces AbortSignal from TypeScript)
 	Context interface{}

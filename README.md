@@ -85,6 +85,10 @@ for event := range streamed.Events {
 
 ## Structured Output
 
+You can provide a JSON schema map directly, or pass a Go struct and let the SDK
+reflect it into JSON Schema using `json` tags. Fields with `omitempty` are treated
+as optional.
+
 ```go
 schema := map[string]interface{}{
     "type": "object",
@@ -102,6 +106,54 @@ result, err := thread.Run(
         OutputSchema: schema,
     },
 )
+```
+
+Or define a struct:
+
+```go
+type SummaryOutput struct {
+    Title   string  `json:"title"`
+    Author  string  `json:"author,omitempty"`
+    Summary string  `json:"summary"`
+}
+
+result, err := thread.Run(
+    "Summarize this document",
+    codex.TurnOptions{
+        OutputSchema: SummaryOutput{},
+    },
+)
+```
+
+### Structured Output Test Cases
+
+Use the following prompts to validate schema reflection manually.
+
+Simple case:
+
+```
+Return a JSON object with exactly these fields:
+title (string), summary (string).
+```
+
+Expected format:
+
+```
+{"title":"...","summary":"..."}
+```
+
+Complex case:
+
+```
+Return a JSON object with:
+id (string), meta (object with count:number and notes:object[string]string, notes optional),
+items (array of objects with name:string and score:number).
+```
+
+Expected format:
+
+```
+{"id":"...","meta":{"count":1},"items":[{"name":"...","score":0.5}]}
 ```
 
 ## Multi-modal Input

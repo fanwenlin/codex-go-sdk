@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+
+	"github.com/invopop/jsonschema"
 )
 
 // OutputSchemaFile represents a temporary output schema file.
@@ -24,8 +27,13 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 		}, nil
 	}
 
+	normalizedSchema, err := normalizeOutputSchema(schema)
+	if err != nil {
+		return nil, err
+	}
+
 	// Check if schema is a valid JSON object (not an array or primitive)
-	schemaBytes, err := json.Marshal(schema)
+	schemaBytes, err := json.Marshal(normalizedSchema)
 	if err != nil {
 		return nil, err
 	}
@@ -58,4 +66,35 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 		SchemaPath: schemaPath,
 		Cleanup:    cleanup,
 	}, nil
+}
+
+func normalizeOutputSchema(schema interface{}) (interface{}, error) {
+	switch schema := schema.(type) {
+	case *jsonschema.Schema:
+		return schema, nil
+	case jsonschema.Schema:
+		return schema, nil
+	}
+
+	schemaType := reflect.TypeOf(schema)
+	if schemaType == nil {
+		return nil, nil
+	}
+
+	for schemaType.Kind() == reflect.Ptr {
+		schemaType = schemaType.Elem()
+		if schemaType == nil {
+			return nil, nil
+		}
+	}
+
+	if schemaType.Kind() == reflect.Struct {
+		reflector := jsonschema.Reflector{
+			AllowAdditionalProperties: false,
+			DoNotReference:            true,
+		}
+		return reflector.ReflectFromType(schemaType), nil
+	}
+
+	return schema, nil
 }
