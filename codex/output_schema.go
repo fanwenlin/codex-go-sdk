@@ -27,10 +27,7 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 		}, nil
 	}
 
-	normalizedSchema, err := normalizeOutputSchema(schema)
-	if err != nil {
-		return nil, err
-	}
+	normalizedSchema := normalizeOutputSchema(schema)
 
 	// Check if schema is a valid JSON object (not an array or primitive)
 	schemaBytes, err := json.Marshal(normalizedSchema)
@@ -68,24 +65,17 @@ func CreateOutputSchemaFile(schema interface{}) (*OutputSchemaFile, error) {
 	}, nil
 }
 
-func normalizeOutputSchema(schema interface{}) (interface{}, error) {
+func normalizeOutputSchema(schema interface{}) interface{} {
 	switch schema := schema.(type) {
 	case *jsonschema.Schema:
-		return schema, nil
+		return schema
 	case jsonschema.Schema:
-		return schema, nil
+		return schema
 	}
 
 	schemaType := reflect.TypeOf(schema)
-	if schemaType == nil {
-		return nil, nil
-	}
-
 	for schemaType.Kind() == reflect.Ptr {
 		schemaType = schemaType.Elem()
-		if schemaType == nil {
-			return nil, nil
-		}
 	}
 
 	if schemaType.Kind() == reflect.Struct {
@@ -93,8 +83,8 @@ func normalizeOutputSchema(schema interface{}) (interface{}, error) {
 			AllowAdditionalProperties: false,
 			DoNotReference:            true,
 		}
-		return reflector.ReflectFromType(schemaType), nil
+		return reflector.ReflectFromType(schemaType)
 	}
 
-	return schema, nil
+	return schema
 }
