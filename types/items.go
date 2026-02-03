@@ -43,7 +43,7 @@ func (i *CommandExecutionItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i CommandExecutionItem) GetType() string {
 	return i.Type
 }
@@ -83,7 +83,7 @@ type FileChangeItem struct {
 	Output string `json:"output,omitempty"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i FileChangeItem) GetType() string {
 	return i.Type
 }
@@ -137,7 +137,7 @@ type McpToolCallError struct {
 	Message string `json:"message"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i McpToolCallItem) GetType() string {
 	return i.Type
 }
@@ -162,7 +162,7 @@ func (i *AgentMessageItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i AgentMessageItem) GetType() string {
 	return i.Type
 }
@@ -186,7 +186,7 @@ func (i *ReasoningItem) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i ReasoningItem) GetType() string {
 	return i.Type
 }
@@ -198,7 +198,7 @@ type WebSearchItem struct {
 	Query string `json:"query"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i WebSearchItem) GetType() string {
 	return i.Type
 }
@@ -216,7 +216,7 @@ type TodoListItem struct {
 	Items []TodoItem `json:"items"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i TodoListItem) GetType() string {
 	return i.Type
 }
@@ -228,7 +228,7 @@ type ErrorItem struct {
 	Message string `json:"message"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i ErrorItem) GetType() string {
 	return i.Type
 }
@@ -246,7 +246,7 @@ type UserMessageItem struct {
 	Text string `json:"text,omitempty"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i UserMessageItem) GetType() string {
 	return i.Type
 }
@@ -259,7 +259,7 @@ type ImageViewItem struct {
 	Path string `json:"path,omitempty"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i ImageViewItem) GetType() string {
 	return i.Type
 }
@@ -270,7 +270,7 @@ type EnteredReviewModeItem struct {
 	Type string `json:"type"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i EnteredReviewModeItem) GetType() string {
 	return i.Type
 }
@@ -281,7 +281,7 @@ type ExitedReviewModeItem struct {
 	Type string `json:"type"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i ExitedReviewModeItem) GetType() string {
 	return i.Type
 }
@@ -293,7 +293,7 @@ type CompactedItem struct {
 	Summary string `json:"summary,omitempty"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i CompactedItem) GetType() string {
 	return i.Type
 }
@@ -309,7 +309,7 @@ type CollabToolCallItem struct {
 	Status    string            `json:"status,omitempty"`
 }
 
-// GetType returns the item type discriminator
+// GetType returns the item type discriminator.
 func (i CollabToolCallItem) GetType() string {
 	return i.Type
 }

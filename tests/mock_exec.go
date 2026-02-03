@@ -91,10 +91,18 @@ func buildCommandArgs(args codex.CodexExecArgs) []string {
 		cmdArgs = append(cmdArgs, "--output-schema", args.OutputSchemaFile)
 	}
 	if args.ModelReasoningEffort != "" {
-		cmdArgs = append(cmdArgs, "--config", fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort))
+		cmdArgs = append(
+			cmdArgs,
+			"--config",
+			fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort),
+		)
 	}
 	if args.NetworkAccessEnabled {
-		cmdArgs = append(cmdArgs, "--config", fmt.Sprintf("sandbox_workspace_write.network_access=%t", args.NetworkAccessEnabled))
+		cmdArgs = append(
+			cmdArgs,
+			"--config",
+			fmt.Sprintf("sandbox_workspace_write.network_access=%t", args.NetworkAccessEnabled),
+		)
 	}
 	if args.WebSearchMode != "" {
 		cmdArgs = append(cmdArgs, "--config", fmt.Sprintf(`web_search="%s"`, args.WebSearchMode))
@@ -154,11 +162,16 @@ func FindAllFlags(args []string, flag string) []string {
 
 // BuildMockEvents builds a mock event stream for testing
 func BuildMockEvents(responseID, messageID, responseText string) []string {
+	itemCompleted := fmt.Sprintf(
+		`{"type":"item.completed","item":{"id":"msg_%s","type":"agent_message","text":%q}}`,
+		messageID,
+		responseText,
+	)
 	return []string{
 		fmt.Sprintf(`{"type":"thread.started","thread_id":"thread_%s"}`, responseID),
 		`{"type":"turn.started"}`,
-		fmt.Sprintf(`{"type":"item.completed","item":{"id":"msg_%s","type":"agent_message","text":%q}}`, messageID, responseText),
-		fmt.Sprintf(`{"type":"turn.completed","usage":{"input_tokens":42,"cached_input_tokens":12,"output_tokens":5}}`),
+		itemCompleted,
+		`{"type":"turn.completed","usage":{"input_tokens":42,"cached_input_tokens":12,"output_tokens":5}}`,
 	}
 }
 

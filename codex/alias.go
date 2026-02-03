@@ -119,8 +119,11 @@ type (
 )
 
 // Re-export option types.
+//
+//nolint:revive // Keep name for public API compatibility and alignment with the TypeScript SDK.
+type CodexOptions = types.CodexOptions
+
 type (
-	CodexOptions    = types.CodexOptions
 	ClientInfo      = types.ClientInfo
 	ThreadOptions   = types.ThreadOptions
 	TurnOptions     = types.TurnOptions

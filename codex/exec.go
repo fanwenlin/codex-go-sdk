@@ -185,11 +185,19 @@ func (c *CodexExec) Run(args CodexExecArgs) <-chan ExecResult {
 		}
 
 		if args.ModelReasoningEffort != "" {
-			commandArgs = append(commandArgs, "--config", fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort))
+			commandArgs = append(
+				commandArgs,
+				"--config",
+				fmt.Sprintf(`model_reasoning_effort="%s"`, args.ModelReasoningEffort),
+			)
 		}
 
 		if args.NetworkAccessEnabled {
-			commandArgs = append(commandArgs, "--config", fmt.Sprintf(`sandbox_workspace_write.network_access=%t`, args.NetworkAccessEnabled))
+			commandArgs = append(
+				commandArgs,
+				"--config",
+				fmt.Sprintf(`sandbox_workspace_write.network_access=%t`, args.NetworkAccessEnabled),
+			)
 		}
 
 		if args.WebSearchMode != "" {

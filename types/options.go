@@ -45,7 +45,9 @@ const (
 type ApprovalDecision string
 
 const (
+	// ApprovalDecisionApproved means the action is approved.
 	ApprovalDecisionApproved ApprovalDecision = "approved"
+	// ApprovalDecisionRejected means the action is rejected.
 	ApprovalDecisionRejected ApprovalDecision = "rejected"
 )
 
@@ -62,8 +64,10 @@ type ApprovalHandler func(request ApprovalRequest) (ApprovalDecision, error)
 type TransportMode string
 
 const (
+	// TransportAppServer uses the Codex app server protocol.
 	TransportAppServer TransportMode = "app-server"
-	TransportCLI       TransportMode = "cli"
+	// TransportCLI uses the Codex CLI JSONL protocol.
+	TransportCLI TransportMode = "cli"
 )
 
 // ClientInfo identifies the SDK client to the app server.

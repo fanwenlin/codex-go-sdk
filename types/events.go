@@ -193,13 +193,13 @@ func (e ThreadErrorEvent) GetType() string {
 
 // RawEvent preserves unrecognized events from the backend.
 type RawEvent struct {
-	// Type is the event type discriminator
+	// Type is the event type discriminator.
 	Type string `json:"type"`
-	// Raw is the original JSON payload
+	// Raw is the original JSON payload.
 	Raw json.RawMessage `json:"raw"`
 }
 
-// GetType returns the event type discriminator
+// GetType returns the event type discriminator.
 func (e RawEvent) GetType() string {
 	return e.Type
 }

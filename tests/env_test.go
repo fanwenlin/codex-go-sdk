@@ -2,6 +2,7 @@ package tests
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -29,21 +30,8 @@ func TestBinaryPathFormat(t *testing.T) {
 
 	// Path should contain correct platform info
 	expectedPattern := "codex/codex-rs/target/debug/codex"
-	// contains is a helper function to check if string contains substring
-	contains := func(s, substr string) bool {
-		for i := 0; i <= len(s)-len(substr); i++ {
-			if s[i:i+len(substr)] == substr {
-				return true
-			}
-		}
-		return false
-	}
 
-	if !contains(binaryPath, expectedPattern) {
+	if !strings.Contains(binaryPath, expectedPattern) {
 		t.Errorf("Binary path should contain '%s', got: %s", expectedPattern, binaryPath)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) && contains(s[1:], substr))
 }

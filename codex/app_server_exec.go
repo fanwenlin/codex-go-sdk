@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -68,7 +69,14 @@ type AppServerExec struct {
 }
 
 // NewAppServerExec creates a new AppServerExec instance.
-func NewAppServerExec(executablePath string, args []string, envOverride map[string]string, clientInfo types.ClientInfo, baseURL string, apiKey string) *AppServerExec {
+func NewAppServerExec(
+	executablePath string,
+	args []string,
+	envOverride map[string]string,
+	clientInfo types.ClientInfo,
+	baseURL string,
+	apiKey string,
+) *AppServerExec {
 	if executablePath == "" {
 		executablePath = findCodexPath()
 	}
@@ -122,6 +130,7 @@ func (a *AppServerExec) ensureStarted() error {
 }
 
 func (a *AppServerExec) start() error {
+	// #nosec G204 -- Executable path and args are user-provided by design in SDK integrations.
 	cmd := exec.Command(a.executablePath, a.args...)
 
 	// Set up environment
@@ -163,8 +172,9 @@ func (a *AppServerExec) start() error {
 		return fmt.Errorf("failed to create app server stderr: %w", err)
 	}
 
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("failed to start app server: %w", err)
+	startErr := cmd.Start()
+	if startErr != nil {
+		return fmt.Errorf("failed to start app server: %w", startErr)
 	}
 
 	a.cmd = cmd
@@ -177,8 +187,9 @@ func (a *AppServerExec) start() error {
 	// Initialize protocol.
 	ctx, cancel := context.WithTimeout(context.Background(), defaultInitTimeout)
 	defer cancel()
-	if err := a.initialize(ctx); err != nil {
-		return err
+	initErr := a.initialize(ctx)
+	if initErr != nil {
+		return initErr
 	}
 	return nil
 }
@@ -220,8 +231,9 @@ func (a *AppServerExec) readStderr(stderr io.Reader) {
 
 func (a *AppServerExec) handleLine(line string) {
 	var envelope rpcEnvelope
-	if err := json.Unmarshal([]byte(line), &envelope); err != nil {
-		a.logf("app server: failed to parse line: %v", err)
+	unmarshalErr := json.Unmarshal([]byte(line), &envelope)
+	if unmarshalErr != nil {
+		a.logf("app server: failed to parse line: %v", unmarshalErr)
 		return
 	}
 	if envelope.ID != nil {
@@ -251,7 +263,7 @@ func (a *AppServerExec) dispatchEvent(event appEvent) {
 }
 
 func (a *AppServerExec) subscribe() chan appEvent {
-	ch := make(chan appEvent, 256)
+	ch := make(chan appEvent, appServerSubscriberBuffer)
 	a.subsMu.Lock()
 	a.subs[ch] = struct{}{}
 	a.subsMu.Unlock()
@@ -275,11 +287,12 @@ func (a *AppServerExec) call(ctx context.Context, method string, params interfac
 	a.pending[id] = respCh
 	a.pendingMu.Unlock()
 
-	if err := a.sendRequest(id, method, params); err != nil {
+	sendErr := a.sendRequest(id, method, params)
+	if sendErr != nil {
 		a.pendingMu.Lock()
 		delete(a.pending, id)
 		a.pendingMu.Unlock()
-		return nil, err
+		return nil, sendErr
 	}
 
 	select {
@@ -319,8 +332,9 @@ func (a *AppServerExec) sendRequest(id int64, method string, params interface{})
 	}
 	a.writeMu.Lock()
 	defer a.writeMu.Unlock()
-	if _, err := a.stdin.Write(append(data, '\n')); err != nil {
-		return err
+	_, writeErr := a.stdin.Write(append(data, '\n'))
+	if writeErr != nil {
+		return writeErr
 	}
 	return nil
 }
@@ -332,8 +346,9 @@ func (a *AppServerExec) initialize(ctx context.Context) error {
 			"version": a.clientInfo.Version,
 		},
 	}
-	if _, err := a.call(ctx, "initialize", params); err != nil {
-		return err
+	_, initErr := a.call(ctx, "initialize", params)
+	if initErr != nil {
+		return initErr
 	}
 	return a.notify("initialized", nil)
 }
@@ -344,121 +359,157 @@ func (a *AppServerExec) Run(args CodexExecArgs) <-chan ExecResult {
 
 	go func() {
 		defer close(output)
-
-		if err := a.ensureStarted(); err != nil {
-			output <- ExecResult{Error: err}
-			return
-		}
-
-		ctx := args.Context
-		if ctx == nil {
-			ctx = context.Background()
-		}
-
-		threadID, isNewThread, err := a.ensureThread(ctx, args.ThreadId, args.Model)
-		if err != nil {
-			output <- ExecResult{Error: err}
-			return
-		}
-
-		if isNewThread {
-			threadStarted := map[string]interface{}{
-				"type":      "thread.started",
-				"thread_id": threadID,
-			}
-			if line, err := json.Marshal(threadStarted); err == nil {
-				output <- ExecResult{Line: string(line)}
-			}
-		}
-
-		inputItems, err := buildInputItems(args)
-		if err != nil {
-			output <- ExecResult{Error: err}
-			return
-		}
-
-		turnParams := map[string]interface{}{
-			"threadId": threadID,
-			"input":    inputItems,
-			"stream":   true,
-		}
-		if args.Model != "" {
-			turnParams["model"] = args.Model
-		}
-		if args.ModelReasoningEffort != "" {
-			turnParams["effort"] = args.ModelReasoningEffort
-		}
-		if args.WorkingDirectory != "" {
-			turnParams["cwd"] = args.WorkingDirectory
-		}
-		if sandbox := buildSandboxPolicy(args); sandbox != nil {
-			turnParams["sandboxPolicy"] = sandbox
-		}
-		if approval := mapApprovalPolicy(args.ApprovalPolicy); approval != "" {
-			turnParams["approvalPolicy"] = approval
-		}
-		if schema, err := loadOutputSchema(args.OutputSchemaFile); err != nil {
-			output <- ExecResult{Error: err}
-			return
-		} else if schema != nil {
-			turnParams["outputSchema"] = schema
-		}
-
-		result, err := a.call(ctx, "turn/start", turnParams)
-		if err != nil {
-			output <- ExecResult{Error: err}
-			return
-		}
-
-		turnID := extractTurnID(result)
-		if turnID == "" {
-			// If the server did not return a turn id, rely on events to detect completion.
-			a.logf("app server: missing turn id in response")
-		}
-
-		sub := a.subscribe()
-		defer a.unsubscribe(sub)
-
-		state := &turnState{
-			items: make(map[string]map[string]interface{}),
-		}
-
-		for {
-			select {
-			case <-ctx.Done():
-				output <- ExecResult{Error: ctx.Err()}
-				return
-			case event, ok := <-sub:
-				if !ok {
-					return
-				}
-				if !eventMatchesTurn(event, threadID, turnID) {
-					continue
-				}
-				if args.ApprovalHandler != nil {
-					if event.Method == "item/commandExecution/approvalRequested" || event.Method == "item/fileChange/approvalRequested" {
-						a.submitApproval(ctx, event, args.ApprovalHandler)
-					}
-				}
-				line, done, err := appEventToLegacyLine(event, state)
-				if err != nil {
-					output <- ExecResult{Error: err}
-					return
-				}
-				if line != "" {
-					output <- ExecResult{Line: line}
-				}
-				if done {
-					return
-				}
-			}
+		turnErr := a.runTurn(args, output)
+		if turnErr != nil {
+			output <- ExecResult{Error: turnErr}
 		}
 	}()
 
 	return output
 }
 
-const defaultInitTimeout = 10 * time.Second
+func (a *AppServerExec) runTurn(args CodexExecArgs, output chan ExecResult) error {
+	startErr := a.ensureStarted()
+	if startErr != nil {
+		return startErr
+	}
+
+	ctx := args.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	threadID, isNewThread, err := a.ensureThread(ctx, args.ThreadId, args.Model)
+	if err != nil {
+		return err
+	}
+
+	if isNewThread {
+		threadStarted := map[string]interface{}{
+			"type":      "thread.started",
+			"thread_id": threadID,
+		}
+		line, marshalErr := json.Marshal(threadStarted)
+		if marshalErr == nil {
+			output <- ExecResult{Line: string(line)}
+		}
+	}
+
+	turnID, err := a.startTurn(ctx, threadID, args)
+	if err != nil {
+		return err
+	}
+
+	if turnID == "" {
+		// If the server did not return a turn id, rely on events to detect completion.
+		a.logf("app server: missing turn id in response")
+	}
+
+	return a.streamTurn(ctx, threadID, turnID, args, output)
+}
+
+func (a *AppServerExec) startTurn(ctx context.Context, threadID string, args CodexExecArgs) (string, error) {
+	turnParams, err := a.buildTurnParams(threadID, args)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := a.call(ctx, "turn/start", turnParams)
+	if err != nil {
+		return "", err
+	}
+
+	return extractTurnID(result), nil
+}
+
+func (a *AppServerExec) buildTurnParams(threadID string, args CodexExecArgs) (map[string]interface{}, error) {
+	inputItems, err := buildInputItems(args)
+	if err != nil {
+		return nil, err
+	}
+
+	turnParams := map[string]interface{}{
+		"threadId": threadID,
+		"input":    inputItems,
+		"stream":   true,
+	}
+	if args.Model != "" {
+		turnParams["model"] = args.Model
+	}
+	if args.ModelReasoningEffort != "" {
+		turnParams["effort"] = args.ModelReasoningEffort
+	}
+	if args.WorkingDirectory != "" {
+		turnParams["cwd"] = args.WorkingDirectory
+	}
+	if sandbox := buildSandboxPolicy(args); sandbox != nil {
+		turnParams["sandboxPolicy"] = sandbox
+	}
+	if approval := mapApprovalPolicy(args.ApprovalPolicy); approval != "" {
+		turnParams["approvalPolicy"] = approval
+	}
+
+	schema, hasSchema, schemaErr := loadOutputSchema(args.OutputSchemaFile)
+	if schemaErr != nil {
+		return nil, schemaErr
+	}
+	if hasSchema {
+		turnParams["outputSchema"] = schema
+	}
+
+	return turnParams, nil
+}
+
+func (a *AppServerExec) streamTurn(
+	ctx context.Context,
+	threadID string,
+	turnID string,
+	args CodexExecArgs,
+	output chan ExecResult,
+) error {
+	sub := a.subscribe()
+	defer a.unsubscribe(sub)
+
+	state := &turnState{
+		items: make(map[string]map[string]interface{}),
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case event, ok := <-sub:
+			if !ok {
+				return nil
+			}
+			if !eventMatchesTurn(event, threadID, turnID) {
+				continue
+			}
+			if args.ApprovalHandler != nil && isApprovalRequestedEvent(event.Method) {
+				a.submitApproval(ctx, event, args.ApprovalHandler)
+			}
+			line, done, err := appEventToLegacyLine(event, state)
+			if err != nil {
+				return err
+			}
+			if line != "" {
+				output <- ExecResult{Line: line}
+			}
+			if done {
+				return nil
+			}
+		}
+	}
+}
+
+func isApprovalRequestedEvent(method string) bool {
+	return method == "item/commandExecution/approvalRequested" || method == "item/fileChange/approvalRequested"
+}
+
+const (
+	appServerSubscriberBuffer = 256
+	defaultInitTimeout        = 10 * time.Second
+)
 
 func (a *AppServerExec) ensureThread(ctx context.Context, requested *string, model string) (string, bool, error) {
 	if requested == nil || *requested == "" {
@@ -472,7 +523,7 @@ func (a *AppServerExec) ensureThread(ctx context.Context, requested *string, mod
 		}
 		threadID := extractThreadID(result)
 		if threadID == "" {
-			return "", false, fmt.Errorf("app server did not return thread id")
+			return "", false, errors.New("app server did not return thread id")
 		}
 		a.knownThreadsMu.Lock()
 		a.knownThreads[threadID] = struct{}{}
@@ -517,8 +568,9 @@ func appEventToLegacyLine(event appEvent, state *turnState) (string, bool, error
 
 	payload := map[string]interface{}{}
 	if len(event.Params) > 0 {
-		if err := json.Unmarshal(event.Params, &payload); err != nil {
-			return "", false, err
+		unmarshalErr := json.Unmarshal(event.Params, &payload)
+		if unmarshalErr != nil {
+			return "", false, unmarshalErr
 		}
 	}
 	payload["type"] = strings.ReplaceAll(method, "/", ".")
@@ -542,8 +594,9 @@ func applyTextDelta(event appEvent, state *turnState, itemType string, field str
 		ItemID string `json:"itemId"`
 		Delta  string `json:"delta"`
 	}
-	if err := json.Unmarshal(event.Params, &params); err != nil {
-		return "", false, err
+	unmarshalErr := json.Unmarshal(event.Params, &params)
+	if unmarshalErr != nil {
+		return "", false, unmarshalErr
 	}
 	if params.ItemID == "" {
 		return "", false, nil
@@ -585,7 +638,8 @@ func eventMatchesTurn(event appEvent, threadID string, turnID string) bool {
 			ID string `json:"id"`
 		} `json:"turn"`
 	}
-	if err := json.Unmarshal(event.Params, &meta); err != nil {
+	unmarshalErr := json.Unmarshal(event.Params, &meta)
+	if unmarshalErr != nil {
 		return false
 	}
 	if meta.TurnID == "" && meta.Turn != nil {
@@ -609,8 +663,9 @@ func (a *AppServerExec) submitApproval(ctx context.Context, event appEvent, hand
 			Type string `json:"type"`
 		} `json:"item"`
 	}
-	if err := json.Unmarshal(event.Params, &params); err != nil {
-		a.logf("app server: failed to parse approval request: %v", err)
+	unmarshalErr := json.Unmarshal(event.Params, &params)
+	if unmarshalErr != nil {
+		a.logf("app server: failed to parse approval request: %v", unmarshalErr)
 		return
 	}
 	itemID := params.ItemID
@@ -642,86 +697,87 @@ func (a *AppServerExec) submitApproval(ctx context.Context, event appEvent, hand
 	if params.ThreadID != "" {
 		payload["threadId"] = params.ThreadID
 	}
-	if _, err := a.call(ctx, "approval/submit", payload); err != nil {
-		a.logf("app server: approval submit error: %v", err)
+	_, submitErr := a.call(ctx, "approval/submit", payload)
+	if submitErr != nil {
+		a.logf("app server: approval submit error: %v", submitErr)
 	}
 }
 
 func buildInputItems(args CodexExecArgs) ([]map[string]interface{}, error) {
-	var items []map[string]interface{}
-
-	if len(args.InputItems) == 0 && args.Input != "" {
-		args.InputItems = []types.UserInput{types.NewTextInput(args.Input)}
+	inputItems := args.InputItems
+	if len(inputItems) == 0 && args.Input != "" {
+		inputItems = []types.UserInput{types.NewTextInput(args.Input)}
 	}
 
-	for _, item := range args.InputItems {
-		switch item.Type {
-		case "text":
-			if item.Text == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "text",
-				"text": item.Text,
-			})
-		case "local_image", "localImage":
-			if item.Path == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "localImage",
-				"path": item.Path,
-			})
-		case "image":
-			url := item.URL
-			if url == "" {
-				url = item.Path
-			}
-			if url == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "image",
-				"url":  url,
-			})
-		case "skill":
-			name := item.Name
-			if name == "" {
-				name = item.Text
-			}
-			if name == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "skill",
-				"name": name,
-			})
-		case "mention":
-			text := item.Text
-			if text == "" {
-				text = item.Name
-			}
-			if text == "" {
-				continue
-			}
-			items = append(items, map[string]interface{}{
-				"type": "mention",
-				"text": text,
-			})
-		}
+	items := make([]map[string]interface{}, 0, len(inputItems)+len(args.Images))
+	for _, item := range inputItems {
+		appendInputItem(&items, item)
 	}
-
 	for _, image := range args.Images {
-		if image == "" {
-			continue
+		appendLocalImage(&items, image)
+	}
+	return items, nil
+}
+
+func appendInputItem(items *[]map[string]interface{}, item types.UserInput) {
+	switch item.Type {
+	case "text":
+		if item.Text == "" {
+			return
 		}
-		items = append(items, map[string]interface{}{
-			"type": "localImage",
-			"path": image,
+		*items = append(*items, map[string]interface{}{
+			"type": "text",
+			"text": item.Text,
+		})
+	case "local_image", "localImage":
+		appendLocalImage(items, item.Path)
+	case "image":
+		url := item.URL
+		if url == "" {
+			url = item.Path
+		}
+		if url == "" {
+			return
+		}
+		*items = append(*items, map[string]interface{}{
+			"type": "image",
+			"url":  url,
+		})
+	case "skill":
+		name := item.Name
+		if name == "" {
+			name = item.Text
+		}
+		if name == "" {
+			return
+		}
+		*items = append(*items, map[string]interface{}{
+			"type": "skill",
+			"name": name,
+		})
+	case "mention":
+		text := item.Text
+		if text == "" {
+			text = item.Name
+		}
+		if text == "" {
+			return
+		}
+		*items = append(*items, map[string]interface{}{
+			"type": "mention",
+			"text": text,
 		})
 	}
+}
 
-	return items, nil
+func appendLocalImage(items *[]map[string]interface{}, path string) {
+	if path == "" {
+		return
+	}
+	*items = append(*items, map[string]interface{}{
+		"type": "localImage",
+		"path": path,
+	})
 }
 
 func buildSandboxPolicy(args CodexExecArgs) map[string]interface{} {
@@ -771,19 +827,20 @@ func mapApprovalPolicy(policy string) string {
 	}
 }
 
-func loadOutputSchema(path string) (interface{}, error) {
+func loadOutputSchema(path string) (interface{}, bool, error) {
 	if path == "" {
-		return nil, nil
+		return nil, false, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var schema interface{}
-	if err := json.Unmarshal(data, &schema); err != nil {
-		return nil, err
+	unmarshalErr := json.Unmarshal(data, &schema)
+	if unmarshalErr != nil {
+		return nil, false, unmarshalErr
 	}
-	return schema, nil
+	return schema, true, nil
 }
 
 func extractThreadID(result json.RawMessage) string {
