@@ -6,10 +6,13 @@ import (
 	"strconv"
 	"strings"
 
+	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/cmd/codex-orchestrator/orchestrator"
 )
 
 // CliOptions contains CLI options.
+//
+//nolint:revive // Name stutter is acceptable for exported API
 type CliOptions struct {
 	DocDir              string
 	SkillsDir           string
@@ -18,33 +21,41 @@ type CliOptions struct {
 	Help                bool
 	Verbose             bool
 	DisableGlobalSkills bool
+	Quiet               bool // Disable progress output
 }
 
 // CliIo contains I/O streams for the CLI.
+//
+//nolint:revive // Name stutter is acceptable for exported API
 type CliIo struct {
 	Stdout io.Writer
 	Stderr io.Writer
 }
 
 // RunCli runs the CLI with the given arguments.
-func RunCli(args []string, io CliIo) int {
+func RunCli(args []string, cliIo CliIo) int {
 	options, errors := parseArgs(args)
 
 	if options.Help {
-		_, _ = io.Stdout.Write([]byte(renderUsage()))
+		_, _ = cliIo.Stdout.Write([]byte(renderUsage()))
 		return 0
 	}
 
 	if len(errors) > 0 {
-		_, _ = io.Stderr.Write([]byte(fmt.Sprintf("%s\n", joinErrors(errors))))
-		_, _ = io.Stderr.Write([]byte(renderUsage()))
+		_, _ = cliIo.Stderr.Write([]byte(joinErrors(errors) + "\n"))
+		_, _ = cliIo.Stderr.Write([]byte(renderUsage()))
 		return 1
 	}
 
 	if options.DocDir == "" {
-		_, _ = io.Stderr.Write([]byte("Missing required document directory.\n"))
-		_, _ = io.Stderr.Write([]byte(renderUsage()))
+		_, _ = cliIo.Stderr.Write([]byte("Missing required document directory.\n"))
+		_, _ = cliIo.Stderr.Write([]byte(renderUsage()))
 		return 1
+	}
+
+	progressWriter := cliIo.Stdout
+	if options.Quiet {
+		progressWriter = nil // nil means discard in orchestrator
 	}
 
 	orchOptions := orchestrator.OrchestratorOptions{
@@ -55,19 +66,21 @@ func RunCli(args []string, io CliIo) int {
 		MaxFileBytes:        options.MaxFileBytes,
 		MaxTotalBytes:       options.MaxTotalBytes,
 		Verbose:             options.Verbose,
-		VerboseWriter:       io.Stderr,
+		VerboseWriter:       cliIo.Stderr,
+		ProgressWriter:      progressWriter,
 	}
 
 	result, err := orchestrator.RunOrchestrator(orchOptions)
 	if err != nil {
-		_, _ = io.Stderr.Write([]byte(fmtError(err)))
+		_, _ = cliIo.Stderr.Write([]byte(fmtError(err)))
 		return 1
 	}
 
-	_, _ = io.Stdout.Write([]byte(fmt.Sprintf("%s\n", result.FinalResponse)))
+	_, _ = cliIo.Stdout.Write([]byte(result.FinalResponse + "\n"))
 	return 0
 }
 
+//nolint:funlen,gocognit,cyclop,nestif // Argument parsing requires sequential steps with nested conditions
 func parseArgs(args []string) (CliOptions, []error) {
 	var options CliOptions
 	var errors []error
@@ -97,6 +110,7 @@ func parseArgs(args []string) (CliOptions, []error) {
 
 		if arg == "--max-file-bytes" {
 			if i+1 >= len(args) {
+				//nolint:perfsprint // Variable shadowing prevents errors.New usage
 				errors = append(errors, fmt.Errorf("missing value for --max-file-bytes"))
 			} else {
 				value, err := strconv.Atoi(args[i+1])
@@ -112,6 +126,7 @@ func parseArgs(args []string) (CliOptions, []error) {
 
 		if arg == "--max-total-bytes" {
 			if i+1 >= len(args) {
+				//nolint:perfsprint // Variable shadowing prevents errors.New usage
 				errors = append(errors, fmt.Errorf("missing value for --max-total-bytes"))
 			} else {
 				value, err := strconv.Atoi(args[i+1])
@@ -137,6 +152,11 @@ func parseArgs(args []string) (CliOptions, []error) {
 
 		if arg == "--disable-global-skills" {
 			options.DisableGlobalSkills = true
+			continue
+		}
+
+		if arg == "--quiet" || arg == "-q" {
+			options.Quiet = true
 			continue
 		}
 
@@ -170,12 +190,14 @@ Options:
       --max-file-bytes N   Limit per file size (default: 262144)
       --max-total-bytes N  Limit total bytes in prompt (default: 2097152)
       --disable-global-skills Disable Codex CLI global skills feature
+  -q, --quiet              Disable progress output (show only final response)
   -v, --verbose            Print debug logs from Codex CLI execution
   -h, --help               Show help
 
 Examples:
   codex-orchestrator ./docs
   codex-orchestrator -d ./docs -s ./skills
+  codex-orchestrator -d ./docs --quiet
 `
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 
+	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/cmd/codex-orchestrator/cli"
 )
 

@@ -8,8 +8,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
+	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/codex"
+	//nolint:depguard // Internal SDK imports are allowed
+	"github.com/fanwenlin/codex-go-sdk/types"
 )
 
 // DocumentEntry represents a document entry.
@@ -27,6 +31,8 @@ type DocumentBundle struct {
 }
 
 // OrchestratorOptions contains options for the orchestrator.
+//
+//nolint:revive // Name stutter is acceptable for exported API
 type OrchestratorOptions struct {
 	DocDir              string
 	IncludeSkills       bool
@@ -38,9 +44,12 @@ type OrchestratorOptions struct {
 	PromptPreamble      string
 	Verbose             bool
 	VerboseWriter       io.Writer
+	ProgressWriter      io.Writer // Writer for progress output with timestamps
 }
 
 // OrchestratorResult contains the result of running the orchestrator.
+//
+//nolint:revive // Name stutter is acceptable for exported API
 type OrchestratorResult struct {
 	FinalResponse string
 	Items         []interface{}
@@ -49,8 +58,18 @@ type OrchestratorResult struct {
 const (
 	DefaultMaxFileBytes  = 256 * 1024
 	DefaultMaxTotalBytes = 2 * 1024 * 1024
+
+	// Output formatting constants.
+	statusOK           = "✓"
+	statusError        = "✗"
+	statusDeclined     = "⊘"
+	maxCommandPreview  = 60
+	maxQueryPreview    = 50
+	maxResponsePreview = 50
+	maxOutputLines     = 10
 )
 
+//nolint:gochecknoglobals // Default configuration values
 var DefaultIgnoreDirs = []string{
 	".git",
 	"node_modules",
@@ -60,6 +79,7 @@ var DefaultIgnoreDirs = []string{
 	".next",
 }
 
+//nolint:gochecknoglobals // Default configuration values
 var DefaultPreamble = []string{
 	"You are a professional coding agent.",
 	"Use the provided documents and skills as the source of truth for requirements,",
@@ -69,9 +89,11 @@ var DefaultPreamble = []string{
 }
 
 // CollectDocumentBundle collects documents and skills from the specified directories.
+//
+//nolint:funlen,cyclop // Document collection logic is inherently sequential
 func CollectDocumentBundle(options OrchestratorOptions) (*DocumentBundle, error) {
 	// Set defaults
-	if options.IncludeSkills == false && options.IncludeSkills != true {
+	if !options.IncludeSkills {
 		options.IncludeSkills = true
 	}
 	if options.MaxFileBytes == 0 {
@@ -189,7 +211,7 @@ func BuildPrompt(bundle *DocumentBundle, preamble string) string {
 	return strings.TrimRight(strings.Join(lines, "\n"), "\n")
 }
 
-// RunOrchestrator runs the orchestrator with the given options.
+// RunOrchestrator runs the orchestrator with the given options using streaming mode.
 func RunOrchestrator(options OrchestratorOptions) (*OrchestratorResult, error) {
 	// Collect document bundle
 	bundle, err := CollectDocumentBundle(options)
@@ -211,21 +233,208 @@ func RunOrchestrator(options OrchestratorOptions) (*OrchestratorResult, error) {
 		DisableSkills: options.DisableGlobalSkills,
 	})
 
-	turn, err := thread.Run(prompt, codex.TurnOptions{})
+	// Use streaming mode for progress tracking
+	stream, err := thread.RunStreamed(prompt, codex.TurnOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to run codex: %w", err)
+		return nil, fmt.Errorf("failed to start codex stream: %w", err)
 	}
 
-	// Convert ThreadItem slice to interface{} slice
-	items := make([]interface{}, len(turn.Items))
-	for i, item := range turn.Items {
-		items[i] = item
+	// Process events and track progress
+	progressWriter := options.ProgressWriter
+	if progressWriter == nil {
+		progressWriter = io.Discard
 	}
+
+	return processStream(stream.Events, progressWriter)
+}
+
+// processStream processes the event stream and returns the final result.
+func processStream(events <-chan types.ThreadEvent, writer io.Writer) (*OrchestratorResult, error) {
+	var items []interface{}
+	var finalResponse string
+	var usage *types.Usage
+	var turnFailure error
+
+	for event := range events {
+		printEventSummary(event, writer)
+
+		switch e := event.(type) {
+		case *types.ItemCompletedEvent:
+			if agentMsg, ok := e.Item.(*types.AgentMessageItem); ok {
+				finalResponse = agentMsg.Text
+			}
+			items = append(items, e.Item)
+		case *types.TurnCompletedEvent:
+			usage = &e.Usage
+		case *types.TurnFailedEvent:
+			turnFailure = fmt.Errorf("turn failed: %s", e.Error.Message)
+		case *types.ThreadErrorEvent:
+			turnFailure = fmt.Errorf("thread error: %s", e.Message)
+		}
+
+		if turnFailure != nil {
+			break
+		}
+	}
+
+	if turnFailure != nil {
+		return nil, turnFailure
+	}
+
+	// Print summary footer
+	timestamp := time.Now().Format("15:04:05")
+	fmt.Fprintf(writer, "\n[%s] ✓ Completed", timestamp)
+	if usage != nil {
+		fmt.Fprintf(writer, " | Tokens: %d in / %d out", usage.InputTokens, usage.OutputTokens)
+	}
+	fmt.Fprintln(writer)
 
 	return &OrchestratorResult{
-		FinalResponse: turn.FinalResponse,
+		FinalResponse: finalResponse,
 		Items:         items,
 	}, nil
+}
+
+// printEventSummary prints a human-readable summary of an event with timestamp.
+func printEventSummary(event types.ThreadEvent, writer io.Writer) {
+	timestamp := time.Now().Format("15:04:05")
+
+	switch e := event.(type) {
+	case *types.ThreadStartedEvent:
+		fmt.Fprintf(writer, "[%s] ▶ Thread started: %s\n", timestamp, e.ThreadId)
+
+	case *types.TurnStartedEvent:
+		fmt.Fprintf(writer, "[%s] ▶ Turn started\n", timestamp)
+
+	case *types.ItemStartedEvent:
+		printItemStarted(e.Item, timestamp, writer)
+
+	case *types.ItemUpdatedEvent:
+		printItemUpdated(e.Item, timestamp, writer)
+
+	case *types.ItemCompletedEvent:
+		printItemCompleted(e.Item, timestamp, writer)
+
+	case *types.TurnCompletedEvent:
+		// Summary printed at the end
+
+	case *types.TurnFailedEvent:
+		fmt.Fprintf(writer, "[%s] ✗ Turn failed: %s\n", timestamp, e.Error.Message)
+
+	case *types.ThreadErrorEvent:
+		fmt.Fprintf(writer, "[%s] ✗ Error: %s\n", timestamp, e.Message)
+	}
+}
+
+// printItemStarted prints a summary for item started event.
+//
+//nolint:cyclop // Type switch requires multiple cases
+func printItemStarted(item types.ThreadItem, timestamp string, writer io.Writer) {
+	switch i := item.(type) {
+	case *types.CommandExecutionItem:
+		fmt.Fprintf(writer, "[%s] $ Executing: %s\n", timestamp, truncate(i.Command, maxCommandPreview))
+	case *types.FileChangeItem:
+		files := make([]string, 0, len(i.Changes))
+		for _, change := range i.Changes {
+			files = append(files, change.Path)
+		}
+		fmt.Fprintf(writer, "[%s] ✎ Modifying %d file(s): %s\n", timestamp, len(i.Changes), strings.Join(files, ", "))
+	case *types.McpToolCallItem:
+		fmt.Fprintf(writer, "[%s] 🔧 Tool call: %s.%s\n", timestamp, i.Server, i.Tool)
+	case *types.AgentMessageItem:
+		// Skip, will show on completion
+	case *types.ReasoningItem:
+		fmt.Fprintf(writer, "[%s] 💭 Reasoning...\n", timestamp)
+	case *types.WebSearchItem:
+		fmt.Fprintf(writer, "[%s] 🔍 Searching: %s\n", timestamp, truncate(i.Query, maxQueryPreview))
+	case *types.TodoListItem:
+		active := 0
+		for _, todo := range i.Items {
+			if !todo.Completed {
+				active++
+			}
+		}
+		fmt.Fprintf(writer, "[%s] ☑ Todo list: %d active, %d completed\n", timestamp, active, len(i.Items)-active)
+	}
+}
+
+// printItemUpdated prints a summary for item updated event.
+func printItemUpdated(item types.ThreadItem, timestamp string, writer io.Writer) {
+	if i, ok := item.(*types.CommandExecutionItem); ok {
+		if i.Status == types.CommandExecutionStatusInProgress && i.AggregatedOutput != nil {
+			// Only show output summary on significant updates
+			output := *i.AggregatedOutput
+			lines := strings.Split(output, "\n")
+			if len(lines) > maxOutputLines {
+				fmt.Fprintf(writer, "[%s]   ... %d lines of output ...\n", timestamp, len(lines))
+			}
+		}
+	}
+}
+
+// printItemCompleted prints a summary for item completed event.
+//
+//nolint:cyclop // Type switch requires multiple cases
+func printItemCompleted(item types.ThreadItem, timestamp string, writer io.Writer) {
+	switch i := item.(type) {
+	case *types.CommandExecutionItem:
+		status := statusOK
+		if i.ExitCode != nil && *i.ExitCode != 0 {
+			status = fmt.Sprintf("%s (exit %d)", statusError, *i.ExitCode)
+		} else if i.Status == types.CommandExecutionStatusFailed {
+			status = statusError
+		}
+		duration := ""
+		if i.AggregatedOutput != nil {
+			lines := strings.Count(*i.AggregatedOutput, "\n")
+			duration = fmt.Sprintf(" | %d lines output", lines+1)
+		}
+		fmt.Fprintf(writer, "[%s]   %s Command completed%s\n", timestamp, status, duration)
+
+	case *types.FileChangeItem:
+		status := statusOK
+		if i.Status == types.PatchApplyStatusFailed {
+			status = statusError
+		} else if i.Status == types.PatchApplyStatusDeclined {
+			status = statusDeclined
+		}
+		fmt.Fprintf(writer, "[%s]   %s Files modified (%d changes)\n", timestamp, status, len(i.Changes))
+
+	case *types.McpToolCallItem:
+		status := statusOK
+		if i.Status == types.McpToolCallStatusFailed {
+			status = statusError
+		}
+		fmt.Fprintf(writer, "[%s]   %s Tool completed: %s.%s\n", timestamp, status, i.Server, i.Tool)
+
+	case *types.AgentMessageItem:
+		lines := strings.Split(i.Text, "\n")
+		preview := truncate(strings.TrimSpace(lines[0]), maxResponsePreview)
+		fmt.Fprintf(writer, "[%s] ← Response: %s\n", timestamp, preview)
+
+	case *types.ReasoningItem:
+		fmt.Fprintf(writer, "[%s]   ✓ Reasoning complete (%d points)\n", timestamp, len(i.Summary))
+
+	case *types.WebSearchItem:
+		fmt.Fprintf(writer, "[%s]   ✓ Search completed\n", timestamp)
+
+	case *types.TodoListItem:
+		completed := 0
+		for _, todo := range i.Items {
+			if todo.Completed {
+				completed++
+			}
+		}
+		fmt.Fprintf(writer, "[%s]   ✓ Todo list updated (%d/%d completed)\n", timestamp, completed, len(i.Items))
+	}
+}
+
+// truncate truncates a string to maxLen and adds ellipsis if needed.
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }
 
 type walkOptions struct {
@@ -240,6 +449,7 @@ type walkState struct {
 	hitLimit      bool
 }
 
+//nolint:funlen,gocognit,cyclop // Directory walking requires sequential steps
 func walkDir(rootDir string, currentDir string, options walkOptions) ([]DocumentEntry, error) {
 	if options.state.hitLimit {
 		return nil, nil
@@ -295,7 +505,6 @@ func walkDir(rootDir string, currentDir string, options walkOptions) ([]Document
 		}
 
 		// Read file
-		//nolint:gosec // Reading files from user-provided directory is expected behavior
 		content, err := os.ReadFile(entryPath)
 		if err != nil {
 			continue
@@ -307,7 +516,7 @@ func walkDir(rootDir string, currentDir string, options walkOptions) ([]Document
 		}
 
 		// Apply size limit
-		includeBytes := min(len(content), options.maxFileBytes)
+		includeBytes := minInt(len(content), options.maxFileBytes)
 		if options.state.totalBytes+includeBytes > options.state.maxTotalBytes {
 			options.state.hitLimit = true
 			break
@@ -376,7 +585,7 @@ func isProbablyText(content []byte) bool {
 	return bytes.IndexByte(content, 0) == -1
 }
 
-func min(a, b int) int {
+func minInt(a, b int) int {
 	if a < b {
 		return a
 	}

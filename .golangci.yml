@@ -33,7 +33,6 @@ linters:
     - errname
     - errorlint
     - exhaustive
-    - exptostd
     - fatcontext
     - forbidigo
     - funlen
@@ -61,7 +60,6 @@ linters:
     - nakedret
     - nestif
     - nilerr
-    - nilnesserr
     - nilnil
     - noctx
     - nolintlint
@@ -87,21 +85,10 @@ linters:
     - unparam
     - unused
     - usestdlibvars
-    - usetesting
     - wastedassign
     - whitespace
 
   disable:
-    - godot
-    - goconst
-    - iface
-    - mnd
-    - nestif
-    - nonamedreturns
-    - perfsprint
-    - recvcheck
-    - revive
-    - testpackage
 
   settings:
     cyclop:
@@ -132,6 +119,10 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog instead
+        "Main":
+          files:
+            - "!**/cmd/**/*.go"
+          deny: []
 
     errcheck:
       check-type-assertions: true
@@ -225,9 +216,6 @@ linters:
         - -ST1021
         - -ST1016
         - -QF1008
-
-    usetesting:
-      os-temp-dir: true
 
   exclusions:
     warn-unused: true
