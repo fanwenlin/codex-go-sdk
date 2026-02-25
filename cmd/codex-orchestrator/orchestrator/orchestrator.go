@@ -10,9 +10,7 @@ import (
 	"strings"
 	"time"
 
-	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/codex"
-	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/types"
 )
 
@@ -56,7 +54,9 @@ type OrchestratorResult struct {
 }
 
 const (
-	DefaultMaxFileBytes  = 256 * 1024
+	// DefaultMaxFileBytes is the default per-file read limit in bytes.
+	DefaultMaxFileBytes = 256 * 1024
+	// DefaultMaxTotalBytes is the default total read limit in bytes.
 	DefaultMaxTotalBytes = 2 * 1024 * 1024
 
 	// Output formatting constants.
@@ -69,6 +69,8 @@ const (
 	maxOutputLines     = 10
 )
 
+// DefaultIgnoreDirs lists directory names skipped during document traversal.
+//
 //nolint:gochecknoglobals // Default configuration values
 var DefaultIgnoreDirs = []string{
 	".git",
@@ -79,6 +81,8 @@ var DefaultIgnoreDirs = []string{
 	".next",
 }
 
+// DefaultPreamble contains the default prompt preamble text.
+//
 //nolint:gochecknoglobals // Default configuration values
 var DefaultPreamble = []string{
 	"You are a professional coding agent.",
@@ -91,7 +95,7 @@ var DefaultPreamble = []string{
 
 // CollectDocumentBundle collects documents and skills from the specified directories.
 //
-//nolint:funlen,cyclop // Document collection logic is inherently sequential
+//nolint:gocognit // Document collection logic is inherently sequential
 func CollectDocumentBundle(options OrchestratorOptions) (*DocumentBundle, error) {
 	// Set defaults
 	if !options.IncludeSkills {
@@ -142,7 +146,7 @@ func CollectDocumentBundle(options OrchestratorOptions) (*DocumentBundle, error)
 	// Collect skills first
 	var skills []DocumentEntry
 	if resolvedSkillsDir != "" {
-		if stat, err := os.Stat(resolvedSkillsDir); err == nil && stat.IsDir() {
+		if skillsStat, statErr := os.Stat(resolvedSkillsDir); statErr == nil && skillsStat.IsDir() {
 			skills, err = walkDir(resolvedSkillsDir, resolvedSkillsDir, walkOptions{
 				ignoreDirNames: options.IgnoreDirNames,
 				maxFileBytes:   options.MaxFileBytes,
@@ -166,8 +170,8 @@ func CollectDocumentBundle(options OrchestratorOptions) (*DocumentBundle, error)
 
 	// If skills directory is a subdirectory of document directory, filter out skills from documents
 	if resolvedSkillsDir != "" && isSubpath(resolvedSkillsDir, resolvedDocDir) {
-		skillsRel, err := filepath.Rel(resolvedDocDir, resolvedSkillsDir)
-		if err == nil {
+		skillsRel, relErr := filepath.Rel(resolvedDocDir, resolvedSkillsDir)
+		if relErr == nil {
 			skillsRel = normalizeRelPath(skillsRel)
 			documents = filterDocuments(documents, skillsRel)
 		}
@@ -328,8 +332,6 @@ func printEventSummary(event types.ThreadEvent, writer io.Writer) {
 }
 
 // printItemStarted prints a summary for item started event.
-//
-//nolint:cyclop // Type switch requires multiple cases
 func printItemStarted(item types.ThreadItem, timestamp string, writer io.Writer) {
 	switch i := item.(type) {
 	case *types.CommandExecutionItem:
@@ -374,8 +376,6 @@ func printItemUpdated(item types.ThreadItem, timestamp string, writer io.Writer)
 }
 
 // printItemCompleted prints a summary for item completed event.
-//
-//nolint:cyclop // Type switch requires multiple cases
 func printItemCompleted(item types.ThreadItem, timestamp string, writer io.Writer) {
 	switch i := item.(type) {
 	case *types.CommandExecutionItem:
@@ -394,10 +394,12 @@ func printItemCompleted(item types.ThreadItem, timestamp string, writer io.Write
 
 	case *types.FileChangeItem:
 		status := statusOK
-		if i.Status == types.PatchApplyStatusFailed {
+		switch i.Status {
+		case types.PatchApplyStatusFailed:
 			status = statusError
-		} else if i.Status == types.PatchApplyStatusDeclined {
+		case types.PatchApplyStatusDeclined:
 			status = statusDeclined
+		case types.PatchApplyStatusInProgress, types.PatchApplyStatusCompleted:
 		}
 		fmt.Fprintf(writer, "[%s]   %s Files modified (%d changes)\n", timestamp, status, len(i.Changes))
 
@@ -450,7 +452,7 @@ type walkState struct {
 	hitLimit      bool
 }
 
-//nolint:funlen,gocognit,cyclop // Directory walking requires sequential steps
+//nolint:gocognit // Directory walking requires sequential steps
 func walkDir(rootDir string, currentDir string, options walkOptions) ([]DocumentEntry, error) {
 	if options.state.hitLimit {
 		return nil, nil
@@ -488,17 +490,17 @@ func walkDir(rootDir string, currentDir string, options walkOptions) ([]Document
 				continue
 			}
 
-			nested, err := walkDir(rootDir, entryPath, options)
-			if err != nil {
-				return nil, err
+			nested, walkErr := walkDir(rootDir, entryPath, options)
+			if walkErr != nil {
+				return nil, walkErr
 			}
 			results = append(results, nested...)
 			continue
 		}
 
 		// Skip non-regular files
-		info, err := entry.Info()
-		if err != nil {
+		info, infoErr := entry.Info()
+		if infoErr != nil {
 			continue
 		}
 		if !info.Mode().IsRegular() {
@@ -506,8 +508,8 @@ func walkDir(rootDir string, currentDir string, options walkOptions) ([]Document
 		}
 
 		// Read file
-		content, err := os.ReadFile(entryPath)
-		if err != nil {
+		content, readErr := os.ReadFile(entryPath)
+		if readErr != nil {
 			continue
 		}
 
@@ -528,8 +530,8 @@ func walkDir(rootDir string, currentDir string, options walkOptions) ([]Document
 			fileContent = fmt.Sprintf("%s\n[truncated %d bytes]", fileContent, len(content)-includeBytes)
 		}
 
-		relativePath, err := filepath.Rel(rootDir, entryPath)
-		if err != nil {
+		relativePath, relErr := filepath.Rel(rootDir, entryPath)
+		if relErr != nil {
 			continue
 		}
 		relativePath = normalizeRelPath(relativePath)

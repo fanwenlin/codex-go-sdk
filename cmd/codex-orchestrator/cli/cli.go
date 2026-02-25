@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	//nolint:depguard // Internal SDK imports are allowed
 	"github.com/fanwenlin/codex-go-sdk/cmd/codex-orchestrator/orchestrator"
 )
 
@@ -80,7 +79,7 @@ func RunCli(args []string, cliIo CliIo) int {
 	return 0
 }
 
-//nolint:funlen,gocognit,cyclop,nestif // Argument parsing requires sequential steps with nested conditions
+//nolint:gocognit,nestif // Argument parsing requires sequential steps with nested conditions
 func parseArgs(args []string) (CliOptions, []error) {
 	var options CliOptions
 	var errors []error

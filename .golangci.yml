@@ -119,11 +119,6 @@ linters:
           deny:
             - pkg: log$
               desc: Use log/slog instead
-        "Main":
-          files:
-            - "!**/cmd/**/*.go"
-          deny: []
-
     errcheck:
       check-type-assertions: true
 
