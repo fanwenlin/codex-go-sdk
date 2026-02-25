@@ -86,6 +86,7 @@ var DefaultPreamble = []string{
 	"background, and acceptance criteria.",
 	"The Skills section contains behavioral instructions you must follow.",
 	"Complete the work and respond with your final answer only.",
+	"Don't forget to run lint and unit tests locally after coding to verify changes",
 }
 
 // CollectDocumentBundle collects documents and skills from the specified directories.
