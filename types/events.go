@@ -157,6 +157,26 @@ type ThreadErrorEvent struct {
 	Message string `json:"message"`
 }
 
+// UnmarshalJSON supports both legacy and current error payload shapes.
+// Some transports emit {"type":"error","message":"..."} while others emit
+// {"type":"error","error":{"message":"..."}}.
+func (e *ThreadErrorEvent) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		Type    string       `json:"type"`
+		Message string       `json:"message"`
+		Error   *ThreadError `json:"error"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	e.Type = payload.Type
+	e.Message = payload.Message
+	if e.Message == "" && payload.Error != nil {
+		e.Message = payload.Error.Message
+	}
+	return nil
+}
+
 // GetType returns the event type discriminator
 func (e ThreadErrorEvent) GetType() string {
 	return e.Type

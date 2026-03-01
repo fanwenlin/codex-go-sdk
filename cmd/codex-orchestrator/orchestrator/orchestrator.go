@@ -227,8 +227,39 @@ func RunOrchestrator(options OrchestratorOptions) (*OrchestratorResult, error) {
 	// Build prompt
 	prompt := BuildPrompt(bundle, options.PromptPreamble)
 
+	// Run with app-server first for richer streaming semantics, then
+	// fall back to CLI transport if the stream backend disconnects.
+	result, runErr := runOrchestratorWithTransport(options, prompt, codex.TransportAppServer)
+	if runErr == nil {
+		return result, nil
+	}
+	if !shouldFallbackToCLI(runErr) {
+		return nil, runErr
+	}
+
+	progressWriter := options.ProgressWriter
+	if progressWriter == nil {
+		progressWriter = io.Discard
+	}
+	timestamp := time.Now().Format("15:04:05")
+	fmt.Fprintf(progressWriter, "[%s] ↻ Stream failed, retrying with CLI transport...\n", timestamp)
+
+	result, retryErr := runOrchestratorWithTransport(options, prompt, codex.TransportCLI)
+	if retryErr != nil {
+		return nil, fmt.Errorf("app-server failed: %w; cli fallback failed: %v", runErr, retryErr)
+	}
+	return result, nil
+}
+
+func runOrchestratorWithTransport(
+	options OrchestratorOptions,
+	prompt string,
+	transport codex.TransportMode,
+) (*OrchestratorResult, error) {
+
 	// Create codex client and run
 	codexClient := codex.NewCodex(codex.CodexOptions{
+		Transport:     transport,
 		Verbose:       options.Verbose,
 		VerboseWriter: options.VerboseWriter,
 	})
@@ -253,6 +284,16 @@ func RunOrchestrator(options OrchestratorOptions) (*OrchestratorResult, error) {
 	return processStream(stream.Events, progressWriter)
 }
 
+func shouldFallbackToCLI(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "stream disconnected") ||
+		strings.Contains(msg, "thread error:") ||
+		strings.Contains(msg, "app server")
+}
+
 // processStream processes the event stream and returns the final result.
 func processStream(events <-chan types.ThreadEvent, writer io.Writer) (*OrchestratorResult, error) {
 	var items []interface{}
@@ -274,6 +315,9 @@ func processStream(events <-chan types.ThreadEvent, writer io.Writer) (*Orchestr
 		case *types.TurnFailedEvent:
 			turnFailure = fmt.Errorf("turn failed: %s", e.Error.Message)
 		case *types.ThreadErrorEvent:
+			if isRecoverableThreadErrorMessage(e.Message) {
+				continue
+			}
 			turnFailure = fmt.Errorf("thread error: %s", e.Message)
 		}
 
@@ -298,6 +342,15 @@ func processStream(events <-chan types.ThreadEvent, writer io.Writer) (*Orchestr
 		FinalResponse: finalResponse,
 		Items:         items,
 	}, nil
+}
+
+func isRecoverableThreadErrorMessage(message string) bool {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	if msg == "" {
+		return false
+	}
+	return strings.HasPrefix(msg, "reconnecting") ||
+		(strings.Contains(msg, "stream disconnected") && strings.Contains(msg, "retry"))
 }
 
 // printEventSummary prints a human-readable summary of an event with timestamp.

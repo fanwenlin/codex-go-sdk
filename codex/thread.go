@@ -217,6 +217,9 @@ func (t *Thread) Run(input types.Input, turnOptions types.TurnOptions) (*types.T
 		case *types.TurnFailedEvent:
 			turnFailure = fmt.Errorf("turn failed: %s", e.Error.Message)
 		case *types.ThreadErrorEvent:
+			if isRecoverableThreadError(e.Message) {
+				continue
+			}
 			turnFailure = fmt.Errorf("thread error: %s", e.Message)
 		}
 
@@ -234,6 +237,15 @@ func (t *Thread) Run(input types.Input, turnOptions types.TurnOptions) (*types.T
 		FinalResponse: finalResponse,
 		Usage:         usage,
 	}, nil
+}
+
+func isRecoverableThreadError(message string) bool {
+	msg := strings.ToLower(strings.TrimSpace(message))
+	if msg == "" {
+		return false
+	}
+	return strings.HasPrefix(msg, "reconnecting") ||
+		(strings.Contains(msg, "stream disconnected") && strings.Contains(msg, "retry"))
 }
 
 // normalizeInput normalizes the input into a prompt string and image paths.

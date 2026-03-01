@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -178,6 +179,62 @@ func TestRunStreamedEvents(t *testing.T) {
 
 	if eventCount != 3 {
 		t.Errorf("Expected 3 events, got %d", eventCount)
+	}
+}
+
+func TestThreadErrorEventUnmarshalNestedError(t *testing.T) {
+	var event types.ThreadErrorEvent
+	err := json.Unmarshal([]byte(`{"type":"error","error":{"message":"stream disconnected"}}`), &event)
+	if err != nil {
+		t.Fatalf("unmarshal error event failed: %v", err)
+	}
+	if event.Type != "error" {
+		t.Fatalf("expected type=error, got %q", event.Type)
+	}
+	if event.Message != "stream disconnected" {
+		t.Fatalf("expected nested error message, got %q", event.Message)
+	}
+}
+
+func TestRunReturnsThreadErrorMessageFromNestedError(t *testing.T) {
+	mockExec := NewMockExec()
+	mockExec.SetEvents([]string{
+		`{"type":"thread.started","threadId":"test"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"error","error":{"message":"stream disconnected before completion"}}`,
+	})
+
+	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
+	thread := client.StartThread(types.ThreadOptions{})
+
+	_, err := thread.Run("test", types.TurnOptions{})
+	if err == nil {
+		t.Fatal("expected run to fail on error event")
+	}
+	if !strings.Contains(err.Error(), "stream disconnected before completion") {
+		t.Fatalf("expected nested error message in run error, got %q", err.Error())
+	}
+}
+
+func TestRunIgnoresRecoverableThreadErrorEvents(t *testing.T) {
+	mockExec := NewMockExec()
+	mockExec.SetEvents([]string{
+		`{"type":"thread.started","threadId":"test"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"error","message":"Reconnecting... 2/5 (stream disconnected before completion)"}`,
+		`{"type":"item.completed","item":{"id":"msg-1","type":"agentMessage","text":"Recovered"}}`,
+		`{"type":"turn.completed","usage":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1}}`,
+	})
+
+	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
+	thread := client.StartThread(types.ThreadOptions{})
+
+	turn, err := thread.Run("test", types.TurnOptions{})
+	if err != nil {
+		t.Fatalf("expected run to continue after recoverable error, got: %v", err)
+	}
+	if turn.FinalResponse != "Recovered" {
+		t.Fatalf("expected final response from completed item, got %q", turn.FinalResponse)
 	}
 }
 
