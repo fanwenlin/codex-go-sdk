@@ -69,6 +69,7 @@ const (
 	maxQueryPreview    = 50
 	maxResponsePreview = 50
 	maxOutputLines     = 10
+	maxDecisionPreview = 120
 	ellipsisLen        = 3
 	defaultMaxTurns    = 3
 
@@ -306,7 +307,13 @@ func runOrchestratorWithTransport(
 			return nil, err
 		}
 
-		if !shouldContinueTurn(result.FinalResponse) || turn >= maxTurns {
+		decision := evaluateContinuation(result.FinalResponse)
+		logContinuationDecision(progressWriter, options.Verbose, turn, maxTurns, result.FinalResponse, decision)
+		if !decision.Continue || turn >= maxTurns {
+			if turn >= maxTurns && decision.Continue {
+				timestamp := time.Now().Format("15:04:05")
+				fmt.Fprintf(progressWriter, "[%s] ! Reached max turns (%d), stopping auto-continue.\n", timestamp, maxTurns)
+			}
 			return result, nil
 		}
 
@@ -328,21 +335,34 @@ func shouldFallbackToCLI(err error) bool {
 		strings.Contains(msg, "app server")
 }
 
-func shouldContinueTurn(finalResponse string) bool {
+type continuationDecision struct {
+	Continue   bool
+	MatchedCue string
+	Reason     string
+}
+
+func evaluateContinuation(finalResponse string) continuationDecision {
 	text := strings.ToLower(strings.TrimSpace(finalResponse))
 	if text == "" {
-		return false
+		return continuationDecision{
+			Continue: false,
+			Reason:   "empty final response",
+		}
 	}
 
 	futureCues := []string{
 		"接下来",
 		"下一步",
+		"我先",
 		"我会",
 		"将会",
 		"继续",
 		"后续",
 		"接着",
 		"然后",
+		"再进入",
+		"再做",
+		"先做",
 		"next",
 		"i will",
 		"i'll",
@@ -353,10 +373,55 @@ func shouldContinueTurn(finalResponse string) bool {
 
 	for _, cue := range futureCues {
 		if strings.Contains(text, cue) {
-			return true
+			return continuationDecision{
+				Continue:   true,
+				MatchedCue: cue,
+				Reason:     "matched follow-up cue",
+			}
 		}
 	}
-	return false
+
+	return continuationDecision{
+		Continue: false,
+		Reason:   "no follow-up cue matched",
+	}
+}
+
+func logContinuationDecision(
+	writer io.Writer,
+	verbose bool,
+	turn int,
+	maxTurns int,
+	finalResponse string,
+	decision continuationDecision,
+) {
+	if !verbose {
+		return
+	}
+	timestamp := time.Now().Format("15:04:05")
+	preview := truncate(strings.TrimSpace(finalResponse), maxDecisionPreview)
+	if decision.Continue {
+		fmt.Fprintf(
+			writer,
+			"[%s] i Continue decision (turn %d/%d): continue=true, cue=%q, reason=%s, response=%q\n",
+			timestamp,
+			turn,
+			maxTurns,
+			decision.MatchedCue,
+			decision.Reason,
+			preview,
+		)
+		return
+	}
+	fmt.Fprintf(
+		writer,
+		"[%s] i Continue decision (turn %d/%d): continue=false, reason=%s, response=%q\n",
+		timestamp,
+		turn,
+		maxTurns,
+		decision.Reason,
+		preview,
+	)
 }
 
 // processStream processes the event stream and returns the final result.

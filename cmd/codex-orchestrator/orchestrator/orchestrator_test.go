@@ -79,7 +79,7 @@ func TestIsRecoverableThreadErrorMessage(t *testing.T) {
 	}
 }
 
-func TestShouldContinueTurn(t *testing.T) {
+func TestEvaluateContinuationShouldContinue(t *testing.T) {
 	cases := []struct {
 		name     string
 		response string
@@ -100,16 +100,31 @@ func TestShouldContinueTurn(t *testing.T) {
 			response: "Created the requested file and finished all required steps.",
 			want:     false,
 		},
+		{
+			name:     "chinese staged-plan cue",
+			response: "我先做强制会话预检（版本、依赖、数据库基础状态），再进入问题排查。",
+			want:     true,
+		},
 	}
 
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			got := shouldContinueTurn(tc.response)
+			got := evaluateContinuation(tc.response).Continue
 			if got != tc.want {
-				t.Fatalf("shouldContinueTurn(%q)=%v, want %v", tc.response, got, tc.want)
+				t.Fatalf("evaluateContinuation(%q).Continue=%v, want %v", tc.response, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestEvaluateContinuationReason(t *testing.T) {
+	decision := evaluateContinuation("All done.")
+	if decision.Continue {
+		t.Fatalf("expected non-continuation decision, got %#v", decision)
+	}
+	if decision.Reason == "" {
+		t.Fatalf("expected decision reason to be set, got %#v", decision)
 	}
 }
 
