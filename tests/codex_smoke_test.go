@@ -238,6 +238,26 @@ func TestRunIgnoresRecoverableThreadErrorEvents(t *testing.T) {
 	}
 }
 
+func TestRunStopsOnFatalThreadErrorEvent(t *testing.T) {
+	mockExec := NewMockExec()
+	mockExec.SetEvents([]string{
+		`{"type":"thread.started","threadId":"test"}`,
+		`{"type":"turn.started"}`,
+		`{"type":"error","message":"authentication failed"}`,
+	})
+
+	client := codex.NewCodexWithExec(mockExec, types.CodexOptions{})
+	thread := client.StartThread(types.ThreadOptions{})
+
+	_, err := thread.Run("test", types.TurnOptions{})
+	if err == nil {
+		t.Fatal("expected run to fail on fatal error event")
+	}
+	if !strings.Contains(err.Error(), "authentication failed") {
+		t.Fatalf("expected fatal error message in run error, got %q", err.Error())
+	}
+}
+
 func TestItemCompletedParsing(t *testing.T) {
 	mockExec := NewMockExec()
 	mockExec.SetEvents([]string{

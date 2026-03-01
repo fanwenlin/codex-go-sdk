@@ -39,6 +39,7 @@ type OrchestratorOptions struct {
 	SkillsDir           string
 	MaxFileBytes        int
 	MaxTotalBytes       int
+	MaxTurns            int
 	IgnoreDirNames      []string
 	PromptPreamble      string
 	Verbose             bool
@@ -68,6 +69,11 @@ const (
 	maxQueryPreview    = 50
 	maxResponsePreview = 50
 	maxOutputLines     = 10
+	ellipsisLen        = 3
+	defaultMaxTurns    = 3
+
+	continueTurnPrompt = "Continue the original task now. You previously indicated there were next " +
+		"steps. Execute them instead of only describing them. End only when the requested work is complete."
 )
 
 // DefaultIgnoreDirs lists directory names skipped during document traversal.
@@ -272,19 +278,44 @@ func runOrchestratorWithTransport(
 		DisableSkills: options.DisableGlobalSkills,
 	})
 
-	// Use streaming mode for progress tracking
-	stream, err := thread.RunStreamed(prompt, codex.TurnOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to start codex stream: %w", err)
-	}
-
-	// Process events and track progress
 	progressWriter := options.ProgressWriter
 	if progressWriter == nil {
 		progressWriter = io.Discard
 	}
 
-	return processStream(stream.Events, progressWriter)
+	maxTurns := options.MaxTurns
+	if maxTurns <= 0 {
+		maxTurns = defaultMaxTurns
+	}
+
+	turnPrompt := prompt
+	var result *OrchestratorResult
+	for turn := 1; turn <= maxTurns; turn++ {
+		if turn > 1 {
+			timestamp := time.Now().Format("15:04:05")
+			fmt.Fprintf(progressWriter, "[%s] ↻ Continuing turn %d/%d...\n", timestamp, turn, maxTurns)
+		}
+
+		stream, err := thread.RunStreamed(turnPrompt, codex.TurnOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to start codex stream: %w", err)
+		}
+
+		result, err = processStream(stream.Events, progressWriter)
+		if err != nil {
+			return nil, err
+		}
+
+		if !shouldContinueTurn(result.FinalResponse) || turn >= maxTurns {
+			return result, nil
+		}
+
+		timestamp := time.Now().Format("15:04:05")
+		fmt.Fprintf(progressWriter, "[%s] ↻ Agent indicated more steps, continuing automatically...\n", timestamp)
+		turnPrompt = continueTurnPrompt
+	}
+
+	return result, nil
 }
 
 func shouldFallbackToCLI(err error) bool {
@@ -295,6 +326,37 @@ func shouldFallbackToCLI(err error) bool {
 	return strings.Contains(msg, "stream disconnected") ||
 		strings.Contains(msg, "thread error:") ||
 		strings.Contains(msg, "app server")
+}
+
+func shouldContinueTurn(finalResponse string) bool {
+	text := strings.ToLower(strings.TrimSpace(finalResponse))
+	if text == "" {
+		return false
+	}
+
+	futureCues := []string{
+		"接下来",
+		"下一步",
+		"我会",
+		"将会",
+		"继续",
+		"后续",
+		"接着",
+		"然后",
+		"next",
+		"i will",
+		"i'll",
+		"continue with",
+		"proceed to",
+		"moving on to",
+	}
+
+	for _, cue := range futureCues {
+		if strings.Contains(text, cue) {
+			return true
+		}
+	}
+	return false
 }
 
 // processStream processes the event stream and returns the final result.
@@ -490,10 +552,14 @@ func printItemCompleted(item types.ThreadItem, timestamp string, writer io.Write
 
 // truncate truncates a string to maxLen and adds ellipsis if needed.
 func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
+	runes := []rune(s)
+	if len(runes) <= maxLen {
 		return s
 	}
-	return s[:maxLen-3] + "..."
+	if maxLen <= ellipsisLen {
+		return string(runes[:maxLen])
+	}
+	return string(runes[:maxLen-ellipsisLen]) + "..."
 }
 
 type walkOptions struct {
