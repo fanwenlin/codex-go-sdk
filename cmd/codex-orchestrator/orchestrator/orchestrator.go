@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -246,7 +247,10 @@ func RunOrchestrator(options OrchestratorOptions) (*OrchestratorResult, error) {
 
 	result, retryErr := runOrchestratorWithTransport(options, prompt, codex.TransportCLI)
 	if retryErr != nil {
-		return nil, fmt.Errorf("app-server failed: %w; cli fallback failed: %v", runErr, retryErr)
+		return nil, errors.Join(
+			fmt.Errorf("app-server failed: %w", runErr),
+			fmt.Errorf("cli fallback failed: %w", retryErr),
+		)
 	}
 	return result, nil
 }
@@ -256,7 +260,6 @@ func runOrchestratorWithTransport(
 	prompt string,
 	transport codex.TransportMode,
 ) (*OrchestratorResult, error) {
-
 	// Create codex client and run
 	codexClient := codex.NewCodex(codex.CodexOptions{
 		Transport:     transport,
