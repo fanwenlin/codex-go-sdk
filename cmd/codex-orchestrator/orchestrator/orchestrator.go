@@ -312,7 +312,12 @@ func runOrchestratorWithTransport(
 		if !decision.Continue || turn >= maxTurns {
 			if turn >= maxTurns && decision.Continue {
 				timestamp := time.Now().Format("15:04:05")
-				fmt.Fprintf(progressWriter, "[%s] ! Reached max turns (%d), stopping auto-continue.\n", timestamp, maxTurns)
+				fmt.Fprintf(
+					progressWriter,
+					"[%s] ! Reached max turns (%d), stopping auto-continue.\n",
+					timestamp,
+					maxTurns,
+				)
 			}
 			return result, nil
 		}
