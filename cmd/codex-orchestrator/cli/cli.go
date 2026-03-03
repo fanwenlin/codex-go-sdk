@@ -1,7 +1,6 @@
 package cli
 
 import (
-	stdErrors "errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -18,7 +17,6 @@ type CliOptions struct {
 	SkillsDir           string
 	MaxFileBytes        int
 	MaxTotalBytes       int
-	MaxTurns            int
 	Help                bool
 	Verbose             bool
 	DisableGlobalSkills bool
@@ -66,7 +64,6 @@ func RunCli(args []string, cliIo CliIo) int {
 		SkillsDir:           options.SkillsDir,
 		MaxFileBytes:        options.MaxFileBytes,
 		MaxTotalBytes:       options.MaxTotalBytes,
-		MaxTurns:            options.MaxTurns,
 		Verbose:             options.Verbose,
 		VerboseWriter:       cliIo.Stderr,
 		ProgressWriter:      progressWriter,
@@ -142,21 +139,6 @@ func parseArgs(args []string) (CliOptions, []error) {
 			continue
 		}
 
-		if arg == "--max-turns" {
-			if i+1 >= len(args) {
-				errors = append(errors, stdErrors.New("missing value for --max-turns"))
-			} else {
-				value, err := strconv.Atoi(args[i+1])
-				if err != nil || value <= 0 {
-					errors = append(errors, fmt.Errorf("invalid --max-turns value: %s", args[i+1]))
-				} else {
-					options.MaxTurns = value
-					i++
-				}
-			}
-			continue
-		}
-
 		if arg == "--help" || arg == "-h" {
 			options.Help = true
 			continue
@@ -184,6 +166,11 @@ func parseArgs(args []string) (CliOptions, []error) {
 
 		if arg != "" && !startsWith(arg, "-") {
 			errors = append(errors, fmt.Errorf("unknown argument: %s", arg))
+			continue
+		}
+
+		if startsWith(arg, "-") {
+			errors = append(errors, fmt.Errorf("unknown argument: %s", arg))
 		}
 	}
 
@@ -206,7 +193,6 @@ Options:
   -s, --skills <dir>       Optional skills directory
       --max-file-bytes N   Limit per file size (default: 262144)
       --max-total-bytes N  Limit total bytes in prompt (default: 2097152)
-      --max-turns N        Max auto-continue turns (default: 3)
       --disable-global-skills Disable Codex CLI global skills feature
   -q, --quiet              Disable progress output (show only final response)
   -v, --verbose            Print debug logs from Codex CLI execution

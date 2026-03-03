@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -79,55 +80,6 @@ func TestIsRecoverableThreadErrorMessage(t *testing.T) {
 	}
 }
 
-func TestEvaluateContinuationShouldContinue(t *testing.T) {
-	cases := []struct {
-		name     string
-		response string
-		want     bool
-	}{
-		{
-			name:     "chinese follow-up cue",
-			response: "预检已完成，接下来我会按清单分步调查并修复。",
-			want:     true,
-		},
-		{
-			name:     "english follow-up cue",
-			response: "Precheck is done. Next I will inspect stream handling.",
-			want:     true,
-		},
-		{
-			name:     "fully completed response",
-			response: "Created the requested file and finished all required steps.",
-			want:     false,
-		},
-		{
-			name:     "chinese staged-plan cue",
-			response: "我先做强制会话预检（版本、依赖、数据库基础状态），再进入问题排查。",
-			want:     true,
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			got := evaluateContinuation(tc.response).Continue
-			if got != tc.want {
-				t.Fatalf("evaluateContinuation(%q).Continue=%v, want %v", tc.response, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestEvaluateContinuationReason(t *testing.T) {
-	decision := evaluateContinuation("All done.")
-	if decision.Continue {
-		t.Fatalf("expected non-continuation decision, got %#v", decision)
-	}
-	if decision.Reason == "" {
-		t.Fatalf("expected decision reason to be set, got %#v", decision)
-	}
-}
-
 func TestTruncateMaintainsValidUTF8(t *testing.T) {
 	s := "先按仓库要求做会话预检，并确认环境是否正常。"
 	truncated := truncate(s, 12)
@@ -136,5 +88,18 @@ func TestTruncateMaintainsValidUTF8(t *testing.T) {
 	}
 	if len([]rune(truncated)) > 12 {
 		t.Fatalf("truncate should keep rune length <= 12, got %d", len([]rune(truncated)))
+	}
+}
+
+func TestDefaultPreambleIncludesExecutionInstruction(t *testing.T) {
+	joined := ""
+	for _, line := range DefaultPreamble {
+		joined += line + " "
+	}
+	if !utf8.ValidString(joined) {
+		t.Fatalf("default preamble should stay valid UTF-8")
+	}
+	if !strings.Contains(joined, "Do not stop after making a plan") {
+		t.Fatalf("default preamble should instruct agent to execute beyond planning")
 	}
 }

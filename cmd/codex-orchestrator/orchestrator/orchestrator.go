@@ -39,7 +39,6 @@ type OrchestratorOptions struct {
 	SkillsDir           string
 	MaxFileBytes        int
 	MaxTotalBytes       int
-	MaxTurns            int
 	IgnoreDirNames      []string
 	PromptPreamble      string
 	Verbose             bool
@@ -63,12 +62,7 @@ const (
 
 	// Output formatting constants.
 	maxResponsePreview = 50
-	maxDecisionPreview = 120
 	ellipsisLen        = 3
-	defaultMaxTurns    = 3
-
-	continueTurnPrompt = "Continue the original task now. You previously indicated there were next " +
-		"steps. Execute them instead of only describing them. End only when the requested work is complete."
 )
 
 // DefaultIgnoreDirs lists directory names skipped during document traversal.
@@ -92,6 +86,7 @@ var DefaultPreamble = []string{
 	"background, and acceptance criteria.",
 	"The Skills section contains behavioral instructions you must follow.",
 	"Complete the work and respond with your final answer only.",
+	"Do not stop after making a plan; execute required changes and validations in this turn.",
 	"Don't forget to run lint and unit tests locally after coding to verify changes",
 }
 
@@ -277,51 +272,12 @@ func runOrchestratorWithTransport(
 	if progressWriter == nil {
 		progressWriter = io.Discard
 	}
-
-	maxTurns := options.MaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultMaxTurns
+	stream, err := thread.RunStreamed(prompt, codex.TurnOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start codex stream: %w", err)
 	}
 
-	turnPrompt := prompt
-	var result *OrchestratorResult
-	for turn := 1; turn <= maxTurns; turn++ {
-		if turn > 1 {
-			timestamp := time.Now().Format("15:04:05")
-			fmt.Fprintf(progressWriter, "[%s] ↻ Continuing turn %d/%d...\n", timestamp, turn, maxTurns)
-		}
-
-		stream, err := thread.RunStreamed(turnPrompt, codex.TurnOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to start codex stream: %w", err)
-		}
-
-		result, err = processStream(stream.Events, progressWriter)
-		if err != nil {
-			return nil, err
-		}
-
-		decision := evaluateContinuation(result.FinalResponse)
-		logContinuationDecision(progressWriter, options.Verbose, turn, maxTurns, result.FinalResponse, decision)
-		if !decision.Continue || turn >= maxTurns {
-			if turn >= maxTurns && decision.Continue {
-				timestamp := time.Now().Format("15:04:05")
-				fmt.Fprintf(
-					progressWriter,
-					"[%s] ! Reached max turns (%d), stopping auto-continue.\n",
-					timestamp,
-					maxTurns,
-				)
-			}
-			return result, nil
-		}
-
-		timestamp := time.Now().Format("15:04:05")
-		fmt.Fprintf(progressWriter, "[%s] ↻ Agent indicated more steps, continuing automatically...\n", timestamp)
-		turnPrompt = continueTurnPrompt
-	}
-
-	return result, nil
+	return processStream(stream.Events, progressWriter)
 }
 
 func shouldFallbackToCLI(err error) bool {
@@ -332,95 +288,6 @@ func shouldFallbackToCLI(err error) bool {
 	return strings.Contains(msg, "stream disconnected") ||
 		strings.Contains(msg, "thread error:") ||
 		strings.Contains(msg, "app server")
-}
-
-type continuationDecision struct {
-	Continue   bool
-	MatchedCue string
-	Reason     string
-}
-
-func evaluateContinuation(finalResponse string) continuationDecision {
-	text := strings.ToLower(strings.TrimSpace(finalResponse))
-	if text == "" {
-		return continuationDecision{
-			Continue: false,
-			Reason:   "empty final response",
-		}
-	}
-
-	futureCues := []string{
-		"接下来",
-		"下一步",
-		"我先",
-		"我会",
-		"将会",
-		"继续",
-		"后续",
-		"接着",
-		"然后",
-		"再进入",
-		"再做",
-		"先做",
-		"next",
-		"i will",
-		"i'll",
-		"continue with",
-		"proceed to",
-		"moving on to",
-	}
-
-	for _, cue := range futureCues {
-		if strings.Contains(text, cue) {
-			return continuationDecision{
-				Continue:   true,
-				MatchedCue: cue,
-				Reason:     "matched follow-up cue",
-			}
-		}
-	}
-
-	return continuationDecision{
-		Continue: false,
-		Reason:   "no follow-up cue matched",
-	}
-}
-
-func logContinuationDecision(
-	writer io.Writer,
-	verbose bool,
-	turn int,
-	maxTurns int,
-	finalResponse string,
-	decision continuationDecision,
-) {
-	if !verbose {
-		return
-	}
-	timestamp := time.Now().Format("15:04:05")
-	preview := truncate(strings.TrimSpace(finalResponse), maxDecisionPreview)
-	if decision.Continue {
-		fmt.Fprintf(
-			writer,
-			"[%s] i Continue decision (turn %d/%d): continue=true, cue=%q, reason=%s, response=%q\n",
-			timestamp,
-			turn,
-			maxTurns,
-			decision.MatchedCue,
-			decision.Reason,
-			preview,
-		)
-		return
-	}
-	fmt.Fprintf(
-		writer,
-		"[%s] i Continue decision (turn %d/%d): continue=false, reason=%s, response=%q\n",
-		timestamp,
-		turn,
-		maxTurns,
-		decision.Reason,
-		preview,
-	)
 }
 
 // processStream processes the event stream and returns the final result.
@@ -436,7 +303,10 @@ func processStream(events <-chan types.ThreadEvent, writer io.Writer) (*Orchestr
 			printThreadStarted(e, writer)
 		case *types.TurnStartedEvent:
 			printTurnStarted(writer)
+		case *types.ItemStartedEvent:
+			printStartedItem(e.Item, writer)
 		case *types.ItemCompletedEvent:
+			printCompletedItem(e.Item, writer)
 			if agentMsg, ok := e.Item.(*types.AgentMessageItem); ok {
 				finalResponse = agentMsg.Text
 				printAgentResponsePreview(agentMsg, writer)
@@ -513,6 +383,40 @@ func printAgentResponsePreview(item *types.AgentMessageItem, writer io.Writer) {
 	lines := strings.Split(item.Text, "\n")
 	preview := truncate(strings.TrimSpace(lines[0]), maxResponsePreview)
 	fmt.Fprintf(writer, "[%s] ← Response: %s\n", timestamp, preview)
+}
+
+func printStartedItem(item types.ThreadItem, writer io.Writer) {
+	timestamp := time.Now().Format("15:04:05")
+	switch i := item.(type) {
+	case *types.CommandExecutionItem:
+		cmdPreview := truncate(strings.TrimSpace(i.Command), maxResponsePreview)
+		fmt.Fprintf(writer, "[%s] … Command started: %s\n", timestamp, cmdPreview)
+	case *types.FileChangeItem:
+		fmt.Fprintf(writer, "[%s] … Patch started (%d changes)\n", timestamp, len(i.Changes))
+	case *types.McpToolCallItem:
+		fmt.Fprintf(writer, "[%s] … MCP started: %s/%s\n", timestamp, i.Server, i.Tool)
+	case *types.ReasoningItem:
+		fmt.Fprintf(writer, "[%s] 💭 Reasoning...\n", timestamp)
+	}
+}
+
+func printCompletedItem(item types.ThreadItem, writer io.Writer) {
+	timestamp := time.Now().Format("15:04:05")
+	switch i := item.(type) {
+	case *types.CommandExecutionItem:
+		exitText := "n/a"
+		if i.ExitCode != nil {
+			exitText = fmt.Sprintf("%d", *i.ExitCode)
+		}
+		cmdPreview := truncate(strings.TrimSpace(i.Command), maxResponsePreview)
+		fmt.Fprintf(writer, "[%s] $ Command done (%s, exit=%s): %s\n", timestamp, i.Status, exitText, cmdPreview)
+	case *types.FileChangeItem:
+		fmt.Fprintf(writer, "[%s] Δ Patch done (%s, %d changes)\n", timestamp, i.Status, len(i.Changes))
+	case *types.McpToolCallItem:
+		fmt.Fprintf(writer, "[%s] ⌁ MCP done (%s): %s/%s\n", timestamp, i.Status, i.Server, i.Tool)
+	case *types.ReasoningItem:
+		fmt.Fprintf(writer, "[%s] ✓ Reasoning complete (%d points)\n", timestamp, len(i.Summary))
+	}
 }
 
 // truncate truncates a string to maxLen and adds ellipsis if needed.
