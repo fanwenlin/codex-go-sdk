@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -406,7 +407,7 @@ func printCompletedItem(item types.ThreadItem, writer io.Writer) {
 	case *types.CommandExecutionItem:
 		exitText := "n/a"
 		if i.ExitCode != nil {
-			exitText = fmt.Sprintf("%d", *i.ExitCode)
+			exitText = strconv.Itoa(*i.ExitCode)
 		}
 		cmdPreview := truncate(strings.TrimSpace(i.Command), maxResponsePreview)
 		fmt.Fprintf(writer, "[%s] $ Command done (%s, exit=%s): %s\n", timestamp, i.Status, exitText, cmdPreview)
