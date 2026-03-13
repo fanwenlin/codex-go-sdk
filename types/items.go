@@ -4,7 +4,7 @@ package types
 type CommandExecutionStatus string
 
 const (
-	CommandExecutionStatusInProgress CommandExecutionStatus = "inProgress"
+	CommandExecutionStatusInProgress CommandExecutionStatus = "in_progress"
 	CommandExecutionStatusCompleted  CommandExecutionStatus = "completed"
 	CommandExecutionStatusFailed     CommandExecutionStatus = "failed"
 	CommandExecutionStatusDeclined   CommandExecutionStatus = "declined"
@@ -17,9 +17,9 @@ type CommandExecutionItem struct {
 	// Command is the command line executed by the agent
 	Command string `json:"command"`
 	// AggregatedOutput is stdout and stderr captured while the command was running
-	AggregatedOutput *string `json:"aggregatedOutput,omitempty"`
+	AggregatedOutput *string `json:"aggregated_output,omitempty"`
 	// ExitCode is set when the command exits; omitted while still running
-	ExitCode *int `json:"exitCode,omitempty"`
+	ExitCode *int `json:"exit_code,omitempty"`
 	// Status is the current status of the command execution
 	Status CommandExecutionStatus `json:"status"`
 }
@@ -54,7 +54,7 @@ type FileUpdateChange struct {
 type PatchApplyStatus string
 
 const (
-	PatchApplyStatusInProgress PatchApplyStatus = "inProgress"
+	PatchApplyStatusInProgress PatchApplyStatus = "in_progress"
 	PatchApplyStatusCompleted  PatchApplyStatus = "completed"
 	PatchApplyStatusFailed     PatchApplyStatus = "failed"
 	PatchApplyStatusDeclined   PatchApplyStatus = "declined"
@@ -81,7 +81,7 @@ func (i FileChangeItem) GetType() string {
 type McpToolCallStatus string
 
 const (
-	McpToolCallStatusInProgress McpToolCallStatus = "inProgress"
+	McpToolCallStatusInProgress McpToolCallStatus = "in_progress"
 	McpToolCallStatusCompleted  McpToolCallStatus = "completed"
 	McpToolCallStatusFailed     McpToolCallStatus = "failed"
 )
@@ -107,7 +107,7 @@ type McpToolCallItem struct {
 // McpToolCallResult contains the result payload for successful MCP tool calls.
 type McpToolCallResult struct {
 	Content           interface{} `json:"content"`
-	StructuredContent interface{} `json:"structuredContent"`
+	StructuredContent interface{} `json:"structured_content,omitempty"`
 }
 
 // McpToolCallError contains error information for failed MCP tool calls.

@@ -49,23 +49,37 @@ func newThreadItem(itemType string) (ThreadItem, bool) {
 	switch itemType {
 	case "agentMessage":
 		return &AgentMessageItem{}, true
+	case "agent_message":
+		return &AgentMessageItem{}, true
 	case "reasoning":
 		return &ReasoningItem{}, true
 	case "userMessage":
 		return &UserMessageItem{}, true
 	case "commandExecution":
 		return &CommandExecutionItem{}, true
+	case "command_execution":
+		return &CommandExecutionItem{}, true
 	case "fileChange":
+		return &FileChangeItem{}, true
+	case "file_change":
 		return &FileChangeItem{}, true
 	case "mcpToolCall":
 		return &McpToolCallItem{}, true
+	case "mcp_tool_call":
+		return &McpToolCallItem{}, true
 	case "webSearch":
 		return &WebSearchItem{}, true
+	case "web_search":
+		return &WebSearchItem{}, true
 	case "todoList":
+		return &TodoListItem{}, true
+	case "todo_list":
 		return &TodoListItem{}, true
 	case "error":
 		return &ErrorItem{}, true
 	case "imageView":
+		return &ImageViewItem{}, true
+	case "image_view":
 		return &ImageViewItem{}, true
 	case "enteredReviewMode":
 		return &EnteredReviewModeItem{}, true

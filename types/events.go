@@ -17,7 +17,7 @@ type ThreadStartedEvent struct {
 	// Type is the event type discriminator
 	Type string `json:"type"`
 	// ThreadId is the identifier of the new thread
-	ThreadId string `json:"threadId"`
+	ThreadId string `json:"thread_id"`
 }
 
 // GetType returns the event type discriminator
@@ -39,11 +39,11 @@ func (e TurnStartedEvent) GetType() string {
 // Usage describes the usage of tokens during a turn.
 type Usage struct {
 	// InputTokens is the number of input tokens used during the turn
-	InputTokens int `json:"inputTokens"`
+	InputTokens int `json:"input_tokens"`
 	// CachedInputTokens is the number of cached input tokens used during the turn
-	CachedInputTokens int `json:"cachedInputTokens"`
+	CachedInputTokens int `json:"cached_input_tokens"`
 	// OutputTokens is the number of output tokens used during the turn
-	OutputTokens int `json:"outputTokens"`
+	OutputTokens int `json:"output_tokens"`
 }
 
 // TurnCompletedEvent is emitted when a turn is completed.
